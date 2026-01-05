@@ -353,7 +353,7 @@ inline static bool scan_back_to_confirm_still_zeroed(const uint8_t *buffer, size
     size_t i = from - AERON_RB_ALIGNMENT;
     bool all_zeroes = true;
 
-    while (i >= limit)
+    while (i >= limit && i < from)  // i < from catches underflow
     {
         const aeron_rb_record_descriptor_t *record = (aeron_rb_record_descriptor_t *)(buffer + i);
         int32_t length;
@@ -363,7 +363,6 @@ inline static bool scan_back_to_confirm_still_zeroed(const uint8_t *buffer, size
             all_zeroes = false;
             break;
         }
-
         i -= AERON_RB_ALIGNMENT;
     }
 
