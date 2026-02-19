@@ -15,8 +15,6 @@
  */
 package io.aeron.driver;
 
-import io.aeron.Aeron;
-import io.aeron.AeronCounters;
 import io.aeron.driver.buffer.RawLog;
 import io.aeron.driver.media.ImageConnection;
 import io.aeron.driver.media.ReceiveChannelEndpoint;
@@ -119,9 +117,6 @@ public final class PublicationImage
     extends PublicationImagePadding3
     implements LossHandler, DriverManagedResource, Subscribable
 {
-
-    private final AtomicCounter overrunsProposedPositionCounter;
-
     @SuppressWarnings("JavadocVariable")
     enum State
     {
@@ -281,10 +276,6 @@ public final class PublicationImage
         flowControlOverRuns = systemCounters.get(FLOW_CONTROL_OVER_RUNS);
         lossGapFills = systemCounters.get(LOSS_GAP_FILLS);
         publicationImagesRevoked = systemCounters.get(PUBLICATION_IMAGES_REVOKED);
-        overrunsProposedPositionCounter = ctx.countersManager().newCounter(
-            "overruns-proposed-position stream=" + streamId, AeronCounters.OVERRUN_PROPOSED_POSITON_TYPE_ID
-        );
-        overrunsProposedPositionCounter.set(Aeron.NULL_VALUE);
 
         imageConnections = ArrayUtil.ensureCapacity(imageConnections, transportIndex + 1);
         imageConnections[transportIndex] = new ImageConnection(nowNs, controlAddress);
@@ -1084,9 +1075,7 @@ public final class PublicationImage
 
         if (isFlowControlOverRun)
         {
-//            System.out.println("overrun proposed position: " + proposedPosition + " for stream: " + streamId);
             flowControlOverRuns.incrementRelease();
-            overrunsProposedPositionCounter.set(proposedPosition);
         }
 
         return isFlowControlOverRun;
