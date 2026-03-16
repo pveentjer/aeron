@@ -68,6 +68,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.File;
+import java.io.IOException;
+import java.net.ServerSocket;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -142,6 +144,7 @@ class PersistentSubscriptionTest
     private AeronArchive aeronArchive;
     private PersistentSubscriptionListenerImpl listener;
     private BufferingFragmentHandler fragmentHandler;
+    private AeronArchive.Context aeronArchiveContext;
 
     @BeforeEach
     void setUp()
@@ -168,7 +171,7 @@ class PersistentSubscriptionTest
 
         aeron = Aeron.connect(aeronCtxTpl.clone().aeronDirectoryName(aeronDirectoryName));
 
-        final AeronArchive.Context aeronArchiveContext = TestContexts.localhostAeronArchive().aeron(aeron);
+        aeronArchiveContext = TestContexts.localhostAeronArchive().aeron(aeron);
         aeronArchive = AeronArchive.connect(aeronArchiveContext.clone());
 
         listener = new PersistentSubscriptionListenerImpl();
@@ -226,6 +229,27 @@ class PersistentSubscriptionTest
             assertEquals(1, listener.errorCount);
             Assertions.assertEquals(
                 Reason.RECORDING_NOT_FOUND,
+                ((PersistentSubscriptionException)listener.lastException).reason()
+            );
+        }
+    }
+
+    @Test
+    @InterruptAfter(10)
+    void shouldErrorWhenArchiveCannotConnect()
+    {
+        final AeronArchive.Context archiveContext  = aeronArchiveContext.clone()
+            .controlRequestChannel("aeron:udp?endpoint=localhost:" + findFreePort() + "|alias=non_existing_endpoint")
+            .messageTimeoutNs(TimeUnit.MILLISECONDS.toNanos(500));
+        persistentSubscriptionCtx.aeronArchiveContext(archiveContext);
+
+        try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
+        {
+            executeUntil(persistentSubscription::hasFailed, () -> persistentSubscription.controlledPoll(null, 1));
+
+            assertEquals(1, listener.errorCount);
+            Assertions.assertEquals(
+               "Sorry cannot talk to archive at the moment", //TODO update to something more serious
                 ((PersistentSubscriptionException)listener.lastException).reason()
             );
         }
@@ -1514,6 +1538,19 @@ class PersistentSubscriptionTest
         final ChannelUri uri = ChannelUri.parse(channel);
         uri.remove(SESSION_ID_PARAM_NAME);
         return uri.toString();
+    }
+
+    private static int findFreePort()
+    {
+        try (ServerSocket socket = new ServerSocket(0))
+        {
+            socket.setReuseAddress(true);
+            return socket.getLocalPort();
+        }
+        catch (final IOException e)
+        {
+            throw new RuntimeException("Failed to find a free port", e);
+        }
     }
 
     private static final class BufferingFragmentHandler implements ControlledFragmentHandler
