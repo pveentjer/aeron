@@ -1061,6 +1061,79 @@ class PersistentSubscriptionTest
         }
     }
 
+    @InterruptAfter(10)
+    @Test
+    void shouldStayOnAReplayWhenStartFromReplayAndLiveCannotConnect(){
+        final PersistentPublication persistentPublication =
+            PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
+
+        final List<byte[]> payloads = generateRandomPayloads(5);
+        persistentPublication.persist(payloads);
+
+        final String publicationChannel = "aeron:udp?control=localhost:" + findFreePort() + "|control-mode=dynamic|fc=max";
+
+        persistentSubscriptionCtx
+            .recordingId(persistentPublication.recordingId())
+            .startPosition(FROM_START)
+            .liveChannel(publicationChannel);
+
+        try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
+        {
+            executeUntil(() -> fragmentHandler.hasReceivedPayloads(5),
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+
+            assertTrue(persistentSubscription.isReplaying());
+
+            for (int i = 10; i > 0; i--){
+                persistentSubscription.controlledPoll(fragmentHandler, 10);
+            }
+
+            Tests.await(() -> archive.context().replaySessionCounter().get() == 1);
+            assertTrue(persistentSubscription.isReplaying());
+
+            final List<byte[]> payloads2 = generateRandomPayloads(3);
+            persistentPublication.persist(payloads2);
+
+            executeUntil(() -> fragmentHandler.hasReceivedPayloads(8),
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+
+            assertTrue(persistentSubscription.isReplaying());
+            Tests.await(() -> archive.context().replaySessionCounter().get() == 1);
+
+            assertPayloads(fragmentHandler.receivedPayloads, payloads, payloads2);
+        }
+    }
+
+
+    @InterruptAfter(10)
+    @Test
+    void shouldErrorWhenStartFromLiveAndLiveCannotConnect(){
+        final PersistentPublication persistentPublication =
+            PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
+
+        final List<byte[]> payloads = generateRandomPayloads(5);
+        persistentPublication.persist(payloads);
+
+        final String publicationChannel = "aeron:udp?control=localhost:" + findFreePort() + "|control-mode=dynamic|fc=max";
+
+        persistentSubscriptionCtx
+            .recordingId(persistentPublication.recordingId())
+            .startPosition(FROM_LIVE)
+            .liveChannel(publicationChannel);
+
+        try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
+        {
+            executeUntil(persistentSubscription::hasFailed, () -> persistentSubscription.controlledPoll(null, 1));
+
+            assertEquals(1, listener.errorCount);
+            Assertions.assertEquals(
+                "Sorry cannot connect to live stream within timeout of ", //TODO update to something more serious
+                listener.lastException.getMessage()
+            );
+        }
+    }
+
+
     @Test
     @InterruptAfter(20)
     void shouldRecoverFromReplayChannelNetworkProblems() throws Exception
