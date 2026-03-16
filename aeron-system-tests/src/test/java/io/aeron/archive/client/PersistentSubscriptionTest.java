@@ -94,6 +94,7 @@ import static io.aeron.test.TestContexts.LOCALHOST_CONTROL_RESPONSE_CHANNEL;
 import static org.agrona.BitUtil.SIZE_OF_LONG;
 import static org.agrona.concurrent.status.CountersReader.NULL_COUNTER_ID;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -1135,6 +1136,96 @@ class PersistentSubscriptionTest
 
 
     @Test
+    @InterruptAfter(5)
+    void shouldStartFromStoppedRecordingAndJoinLiveWhenLiveHaveNotAdvanced()
+    {
+        final PersistentPublication persistentPublication =
+            PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
+
+        final List<byte[]> payloads = generateFixedPayloads(8, ONE_KB_MESSAGE_SIZE);
+        persistentPublication.persist(payloads);
+
+        aeronArchive.stopRecording(persistentPublication.publication);
+
+        persistentSubscriptionCtx
+            .liveChannel(MDC_SUBSCRIPTION_CHANNEL)
+            .recordingId(persistentPublication.recordingId());
+
+        try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
+        {
+            executeUntil(() -> fragmentHandler.hasReceivedPayloads(7),
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+
+            assertTrue(persistentSubscription.isReplaying());
+
+            executeUntil(() -> fragmentHandler.hasReceivedPayloads(payloads.size()), () ->
+                persistentSubscription.controlledPoll(fragmentHandler, 10));
+
+            assertPayloads(fragmentHandler.receivedPayloads, payloads);
+
+            executeUntil(persistentSubscription::isLive,
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+
+            assertEquals(payloads.size(), fragmentHandler.receivedPayloads.size());
+
+            final List<byte[]> payloads2 = generateFixedPayloads(16, ONE_KB_MESSAGE_SIZE);
+            persistentPublication.publish(payloads2);
+
+            executeUntil(() -> fragmentHandler.hasReceivedPayloads(payloads.size() + payloads2.size()),
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+
+            assertTrue(persistentSubscription.isLive());
+            assertFalse(persistentSubscription.isReplaying());
+        }
+    }
+
+    @Test
+    @InterruptAfter(5)
+    void shouldStartFromStoppedRecordingAndErrorWhenLiveHaveAdvanced()
+    {
+        final PersistentPublication persistentPublication =
+            PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
+
+        final List<byte[]> payloads = generateFixedPayloads(8, ONE_KB_MESSAGE_SIZE);
+        persistentPublication.persist(payloads);
+
+        aeronArchive.stopRecording(persistentPublication.publication);
+
+        final List<byte[]> payloads2 = generateFixedPayloads(1, ONE_KB_MESSAGE_SIZE);
+        persistentPublication.publish(payloads);
+
+        final Subscription subscriber2 = aeron.addSubscription(MDC_SUBSCRIPTION_CHANNEL, STREAM_ID);
+        final BufferingFragmentHandler subscriber2FragmentHandler = new BufferingFragmentHandler();
+
+        executeUntil(() -> subscriber2FragmentHandler.hasReceivedPayloads(payloads2.size()),
+            () -> subscriber2.controlledPoll(subscriber2FragmentHandler, 1));
+        subscriber2.close();
+
+        persistentSubscriptionCtx
+            .liveChannel(MDC_SUBSCRIPTION_CHANNEL)
+            .recordingId(persistentPublication.recordingId());
+
+        try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
+        {
+            executeUntil(() -> fragmentHandler.hasReceivedPayloads(payloads.size()),
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 7));
+
+            assertTrue(persistentSubscription.isReplaying());
+
+            executeUntil(persistentSubscription::hasFailed,
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+
+            assertEquals(payloads.size(), fragmentHandler.receivedPayloads.size());
+            assertEquals(1, listener.errorCount);
+            assertEquals(ArchiveException.class, listener.lastException.getClass());
+            assertThat(listener.lastException.getMessage(), containsString(
+                "ERROR - replay request failed")
+            );
+        }
+    }
+
+
+    @Test
     @InterruptAfter(20)
     void shouldRecoverFromReplayChannelNetworkProblems() throws Exception
     {
@@ -1737,10 +1828,15 @@ class PersistentSubscriptionTest
             {
                 return;
             }
+            long position = publish(messages);
+            Tests.awaitPosition(countersReader, recordingCounterId, position);
+        }
 
+        long publish(final List<byte[]> messages)
+        {
             final UnsafeBuffer wrapper = new UnsafeBuffer();
 
-            long position = 0;
+            long position = publication.position();
             for (final byte[] message : messages)
             {
                 wrapper.wrap(message);
@@ -1749,8 +1845,7 @@ class PersistentSubscriptionTest
                     Tests.yieldingIdle("failed to offer due to " + Publication.errorString(position));
                 }
             }
-
-            Tests.awaitPosition(countersReader, recordingCounterId, position);
+            return position;
         }
 
         long stop()
