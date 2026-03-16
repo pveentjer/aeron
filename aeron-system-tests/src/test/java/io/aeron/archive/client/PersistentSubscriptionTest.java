@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2025 Real Logic Limited.
+ * Copyright 2014-2026 Real Logic Limited.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -68,8 +68,6 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.File;
-import java.io.IOException;
-import java.net.ServerSocket;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -240,7 +238,7 @@ class PersistentSubscriptionTest
     void shouldErrorWhenArchiveCannotConnect()
     {
         final AeronArchive.Context archiveContext  = aeronArchiveContext.clone()
-            .controlRequestChannel("aeron:udp?endpoint=localhost:" + findFreePort() + "|alias=non_existing_endpoint")
+            .controlRequestChannel("aeron:udp?endpoint=localhost:49581|alias=non_existing_endpoint")
             .messageTimeoutNs(TimeUnit.MILLISECONDS.toNanos(500));
         persistentSubscriptionCtx.aeronArchiveContext(archiveContext);
 
@@ -1071,7 +1069,7 @@ class PersistentSubscriptionTest
         final List<byte[]> payloads = generateRandomPayloads(5);
         persistentPublication.persist(payloads);
 
-        final String publicationChannel = "aeron:udp?control=localhost:" + findFreePort() + "|control-mode=dynamic|fc=max";
+        final String publicationChannel = "aeron:udp?control=localhost:49582|control-mode=dynamic|fc=max";
 
         persistentSubscriptionCtx
             .recordingId(persistentPublication.recordingId())
@@ -1115,7 +1113,7 @@ class PersistentSubscriptionTest
         final List<byte[]> payloads = generateRandomPayloads(5);
         persistentPublication.persist(payloads);
 
-        final String publicationChannel = "aeron:udp?control=localhost:" + findFreePort() + "|control-mode=dynamic|fc=max";
+        final String publicationChannel = "aeron:udp?control=localhost:49583|control-mode=dynamic|fc=max";
 
         persistentSubscriptionCtx
             .recordingId(persistentPublication.recordingId())
@@ -1702,19 +1700,6 @@ class PersistentSubscriptionTest
         final ChannelUri uri = ChannelUri.parse(channel);
         uri.remove(SESSION_ID_PARAM_NAME);
         return uri.toString();
-    }
-
-    private static int findFreePort()
-    {
-        try (ServerSocket socket = new ServerSocket(0))
-        {
-            socket.setReuseAddress(true);
-            return socket.getLocalPort();
-        }
-        catch (final IOException e)
-        {
-            throw new RuntimeException("Failed to find a free port", e);
-        }
     }
 
     private static final class BufferingFragmentHandler implements ControlledFragmentHandler
