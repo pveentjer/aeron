@@ -48,6 +48,7 @@ import io.aeron.test.RandomWatcher;
 import io.aeron.test.SystemTestWatcher;
 import io.aeron.test.TestContexts;
 import io.aeron.test.Tests;
+import io.aeron.test.driver.StreamIdFrameDataLossGenerator;
 import io.aeron.test.driver.StreamIdLossGenerator;
 import io.aeron.test.driver.TestMediaDriver;
 import org.agrona.CloseHelper;
@@ -70,10 +71,12 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.BooleanSupplier;
 import java.util.stream.Stream;
@@ -940,6 +943,78 @@ class PersistentSubscriptionTest
                 () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
 
             assertPayloads(fragmentHandler.receivedPayloads, List.of(payload0, payload1));
+        }
+    }
+
+    @Test
+    @InterruptAfter(10)
+    void shouldAssembleFragmentedMessagesWhenFragmentsAreSplitBetweenLiveAndReplay()
+    {
+        final String publicationChannel = "aeron:udp?endpoint=224.0.1.1:40457|interface=localhost|fc=max";
+        final String subscriptionChannel = "aeron:udp?endpoint=224.0.1.1:40457|interface=localhost";
+
+        final PersistentPublication persistentPublication =
+            PersistentPublication.create(aeronArchive, publicationChannel, STREAM_ID);
+
+        final int maxPayloadLength = persistentPublication.maxPayloadLength();
+        final int sizeRequiringFragmentation = maxPayloadLength * 2;
+        final byte[] payloads = new byte[sizeRequiringFragmentation];
+        new Random(0xBEEFL).nextBytes(payloads);
+        final String fragmentTwoStartBytes = Arrays.toString(
+                Arrays.copyOfRange(payloads, maxPayloadLength, maxPayloadLength + Math.min(maxPayloadLength, 32)))
+            .replaceAll("[\\[\\]]", "");
+
+        final StreamIdFrameDataLossGenerator streamIdFrameDataLossGenerator = new StreamIdFrameDataLossGenerator();
+
+        final String aeron2Dir = CommonContext.generateRandomDirName();
+
+        final MediaDriver.Context driverCtxWithLoss = driverCtxTpl.clone()
+            .aeronDirectoryName(aeron2Dir)
+            .imageLivenessTimeoutNs(TimeUnit.SECONDS.toNanos(1))
+            .receiveChannelEndpointSupplier(receiveChannelEndpointSupplier(streamIdFrameDataLossGenerator));
+        addCloseable(TestMediaDriver.launch(driverCtxWithLoss, systemTestWatcher));
+        systemTestWatcher.dataCollector().add(driverCtxWithLoss.aeronDirectory());
+
+        final Aeron.Context aeron2Context = aeronCtxTpl.clone()
+            .aeronDirectoryName(aeron2Dir);
+        final Aeron aeron2 = Aeron.connect(aeron2Context);
+        addCloseable(aeron2);
+
+        persistentSubscriptionCtx
+            .aeron(aeron2)
+            .liveChannel(subscriptionChannel)
+            .liveStreamId(STREAM_ID)
+            .recordingId(persistentPublication.recordingId())
+            .aeronDirectoryName(aeron2Dir)
+            .startPosition(FROM_LIVE);
+
+        try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
+        {
+            executeUntil(persistentSubscription::isLive,
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+
+            AtomicBoolean keepDroppingAfterMatch = new AtomicBoolean(false);
+            streamIdFrameDataLossGenerator.enable(STREAM_ID,
+                (bytes) -> {
+                    if (Arrays.toString(bytes).contains(fragmentTwoStartBytes))
+                    {
+                        keepDroppingAfterMatch.set(true);
+                    }
+                    return keepDroppingAfterMatch.get();
+                }
+            );
+            persistentPublication.persist(List.of(payloads));
+
+            executeUntil(persistentSubscription::isReplaying,
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+            assertTrue(fragmentHandler.receivedPayloads.isEmpty());
+
+            streamIdFrameDataLossGenerator.disable();
+
+            executeUntil(persistentSubscription::isLive,
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+
+            assertPayloads(fragmentHandler.receivedPayloads, List.of(payloads));
         }
     }
 
