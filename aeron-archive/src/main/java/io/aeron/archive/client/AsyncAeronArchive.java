@@ -85,10 +85,9 @@ final class AsyncAeronArchive implements AutoCloseable
     boolean trySendReplayRequest(
         final long correlationId,
         final long recordingId,
-        final long position,
-        final long length,
         final int replayStreamId,
-        final String replayChannel)
+        final String replayChannel,
+        final ReplayParams replayParams)
     {
         if (state == State.CONNECTED)
         {
@@ -96,12 +95,12 @@ final class AsyncAeronArchive implements AutoCloseable
             {
                 return archiveProxy.replay(
                     recordingId,
-                    position,
-                    length,
                     replayChannel,
                     replayStreamId,
+                    replayParams,
                     correlationId,
-                    controlSessionId);
+                    controlSessionId
+                );
             }
             catch (final ArchiveException e)
             {
