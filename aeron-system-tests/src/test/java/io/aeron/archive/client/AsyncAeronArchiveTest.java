@@ -232,6 +232,7 @@ class AsyncAeronArchiveTest
 
         assertFalse(asyncAeronArchive.isConnected());
         assertFalse(asyncAeronArchive.trySendMaxRecordedPositionRequest(7, recordingId));
+        assertFalse(asyncAeronArchive.trySendReplayTokenRequest(8, recordingId));
 
         final int errorCount = listener.errors().size();
         pollUntil(listener::errors, hasSize(errorCount + 1));
@@ -241,8 +242,8 @@ class AsyncAeronArchiveTest
         pollUntil(listener::onConnectedCount, equalTo(2));
         assertTrue(asyncAeronArchive.isConnected());
 
-        assertTrue(asyncAeronArchive.trySendMaxRecordedPositionRequest(8, recordingId));
-        pollUntil(listener::controlResponses, hasItem(new ControlResponse(8, position, OK, "")));
+        assertTrue(asyncAeronArchive.trySendMaxRecordedPositionRequest(9, recordingId));
+        pollUntil(listener::controlResponses, hasItem(new ControlResponse(9, position, OK, "")));
     }
 
     @Test
