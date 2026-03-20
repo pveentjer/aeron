@@ -151,8 +151,10 @@ class AsyncAeronArchiveTest
         pollUntil(listener::controlResponses, hasItem(
             new ControlResponse(2, UNKNOWN_RECORDING, ERROR, "unknown recording id: 11")));
 
+        final ReplayParams replayParams1 = new ReplayParams().position(0).length(REPLAY_ALL_AND_STOP);
         assertTrue(asyncAeronArchive.trySendReplayRequest(
-            3, 12, 0, REPLAY_ALL_AND_STOP, 2000, IPC_CHANNEL));
+            3, 12, 2000, IPC_CHANNEL, replayParams1
+        ));
         pollUntil(listener::controlResponses, hasItem(
             new ControlResponse(3, UNKNOWN_RECORDING, ERROR, "unknown recording id: 12")));
 
@@ -192,8 +194,10 @@ class AsyncAeronArchiveTest
         final String replayChannel = IPC_CHANNEL;
         try (Subscription subscription = aeronArchive.context().aeron().addSubscription(replayChannel, replayStreamId))
         {
+            final ReplayParams replayParams2 = new ReplayParams().position(0).length(REPLAY_ALL_AND_STOP);
             assertTrue(asyncAeronArchive.trySendReplayRequest(
-                6, recordingId, 0, REPLAY_ALL_AND_STOP, replayStreamId, replayChannel));
+                6, recordingId, replayStreamId, replayChannel, replayParams2)
+            );
             final ControlResponse replayResponse = pollUntil(
                 () -> listener.controlResponseFor(6), notNullValue(ControlResponse.class));
             assertEquals(OK, replayResponse.code());
@@ -251,11 +255,13 @@ class AsyncAeronArchiveTest
 
         pollUntil(asyncAeronArchive::isConnected, equalTo(true));
 
-        try (ExclusivePublication publication = aeronArchive.addRecordedExclusivePublication(IPC_CHANNEL, 5000);
+        try (ExclusivePublication ignored = aeronArchive.addRecordedExclusivePublication(IPC_CHANNEL, 5000);
             Subscription subscription = aeronArchive.context().aeron().addSubscription(IPC_CHANNEL, 6000))
         {
+            final ReplayParams replayParams = new ReplayParams().position(0).length(REPLAY_ALL_AND_FOLLOW);
             assertTrue(asyncAeronArchive.trySendReplayRequest(
-                1, 0, 0, REPLAY_ALL_AND_FOLLOW, subscription.streamId(), subscription.channel()));
+                1, 0, subscription.streamId(), subscription.channel(), replayParams)
+            );
             final ControlResponse replayResponse = pollUntil(
                 () -> listener.controlResponseFor(1), notNullValue(ControlResponse.class));
             assertEquals(OK, replayResponse.code());
