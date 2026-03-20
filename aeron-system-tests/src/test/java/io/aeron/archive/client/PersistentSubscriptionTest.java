@@ -87,6 +87,7 @@ import static io.aeron.archive.client.PersistentSubscription.FROM_LIVE;
 import static io.aeron.archive.client.PersistentSubscription.FROM_START;
 import static io.aeron.driver.status.StreamCounter.CHANNEL_OFFSET;
 import static io.aeron.driver.status.StreamCounter.STREAM_ID_OFFSET;
+import static io.aeron.test.TestContexts.LOCALHOST_CONTROL_RESPONSE_CHANNEL;
 import static org.agrona.BitUtil.SIZE_OF_LONG;
 import static org.agrona.concurrent.status.CountersReader.NULL_COUNTER_ID;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -442,7 +443,7 @@ class PersistentSubscriptionTest
     @ParameterizedTest
     @MethodSource("replayChannelsAndStreams")
     @InterruptAfter(5)
-    void shouldReplayOverConfiguredChannel(final String replayChannel, final int replayStreamId)
+    void shouldReplayOverConfiguredChannel(final String replayChannel, final int replayStreamId, final String archiveControlResponseChannel)
     {
         final PersistentPublication persistentPublication =
             PersistentPublication.create(aeronArchive, IPC_CHANNEL, STREAM_ID);
@@ -453,7 +454,8 @@ class PersistentSubscriptionTest
         persistentSubscriptionCtx
             .recordingId(persistentPublication.recordingId())
             .replayChannel(replayChannel)
-            .replayStreamId(replayStreamId);
+            .replayStreamId(replayStreamId)
+            .aeronArchiveContext().controlResponseChannel(archiveControlResponseChannel);
 
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
@@ -1490,10 +1492,14 @@ class PersistentSubscriptionTest
     private static Stream<Arguments> replayChannelsAndStreams()
     {
         return Stream.of(
-            arguments("aeron:udp?endpoint=localhost:0", -10),
-            arguments("aeron:udp?endpoint=localhost:10001", -11),
-            arguments("aeron:ipc", -12)
-            // TODO add response channel
+            arguments("aeron:udp?endpoint=localhost:0", -10, LOCALHOST_CONTROL_RESPONSE_CHANNEL),
+            arguments("aeron:udp?endpoint=localhost:10001", -11, LOCALHOST_CONTROL_RESPONSE_CHANNEL),
+            arguments("aeron:ipc", -12, LOCALHOST_CONTROL_RESPONSE_CHANNEL),
+            arguments("aeron:udp?endpoint=localhost:10001", -11, LOCALHOST_CONTROL_RESPONSE_CHANNEL),
+            arguments("aeron:udp?control=localhost:10001|control-mode=response", -11, "aeron:udp?control-mode=response|control=localhost:10002"),
+            arguments("aeron:udp?control=localhost:10001|control-mode=response|endpoint=localhost:5006", -11, "aeron:udp?control-mode=response|control=localhost:10002")
+            // TODO wildcard response channels
+            // TODO IPC response channels
         );
     }
 
