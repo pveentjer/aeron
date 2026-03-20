@@ -87,6 +87,7 @@ public final class PersistentSubscription implements AutoCloseable
     private long joinError;
     private long nextLivePosition = Aeron.NULL_VALUE;
     private long position;
+    private ReplayParams replayParams = new ReplayParams();
 
     private PersistentSubscription(final Context ctx)
     {
@@ -415,13 +416,14 @@ public final class PersistentSubscription implements AutoCloseable
             case DYNAMIC_PORT -> replayChannelUri.toString();
         };
 
+        replayParams.reset();
+        replayParams.position(position).length(REPLAY_ALL_AND_FOLLOW);
         if (!asyncAeronArchive.trySendReplayRequest(
             correlationId,
             recordingId,
-            position,
-            REPLAY_ALL_AND_FOLLOW,
             replayStreamId,
-            channel))
+            channel,
+            replayParams))
         {
             if (asyncAeronArchive.isConnected())
             {
