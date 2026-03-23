@@ -1651,6 +1651,7 @@ public final class PersistentSubscription implements AutoCloseable
                 return;
             }
 
+            cleanUpRequestPublication();
             cleanUpLiveSubscription();
             cleanUpReplay();
             cleanUpReplaySubscription();
