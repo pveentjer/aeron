@@ -28,6 +28,7 @@ import io.aeron.Subscription;
 import io.aeron.archive.Archive;
 import io.aeron.archive.ArchiveThreadingMode;
 import io.aeron.archive.client.PersistentSubscriptionException.Reason;
+import io.aeron.archive.codecs.SourceLocation;
 import io.aeron.archive.status.RecordingPos;
 import io.aeron.driver.MediaDriver;
 import io.aeron.driver.ReceiveChannelEndpointSupplier;
@@ -148,6 +149,7 @@ class PersistentSubscriptionTest
     private AeronArchive aeronArchive;
     private PersistentSubscriptionListenerImpl listener;
     private BufferingFragmentHandler fragmentHandler;
+    private Archive.Context archiveCtx;
     private AeronArchive.Context aeronArchiveContext;
 
     @BeforeEach
@@ -160,7 +162,7 @@ class PersistentSubscriptionTest
 
         archiveDir = new File(SystemUtil.tmpDirName(), "archive");
 
-        final Archive.Context archiveCtx = TestContexts.localhostArchive()
+        archiveCtx = TestContexts.localhostArchive()
             .catalogCapacity(128 * 1024)
             .segmentFileLength(TERM_LENGTH)
             .aeronDirectoryName(aeronDirectoryName)
@@ -170,7 +172,7 @@ class PersistentSubscriptionTest
 
         driver = TestMediaDriver.launch(driverCtx, systemTestWatcher);
         systemTestWatcher.dataCollector().add(driverCtx.aeronDirectory());
-        archive = Archive.launch(archiveCtx);
+        archive = Archive.launch(archiveCtx.clone());
         systemTestWatcher.dataCollector().add(archiveCtx.archiveDir());
 
         aeron = Aeron.connect(aeronCtxTpl.clone().aeronDirectoryName(aeronDirectoryName));
@@ -1531,6 +1533,94 @@ class PersistentSubscriptionTest
         }
     }
 
+    @Test
+    @InterruptAfter(10)
+    void shouldReconnectToTheArchiveAfterArchiveRestart()
+    {
+        final String aeron2Dir = CommonContext.generateRandomDirName();
+
+        final MediaDriver.Context driver2Ctx = driverCtxTpl
+            .aeronDirectoryName(aeron2Dir)
+            .imageLivenessTimeoutNs(TimeUnit.SECONDS.toNanos(2));
+
+        final TestMediaDriver mediaDriver2 = TestMediaDriver.launch(driver2Ctx.clone(), systemTestWatcher);
+        addCloseable(mediaDriver2);
+        systemTestWatcher.dataCollector().add(driver2Ctx.aeronDirectory());
+
+        final Aeron.Context aeron2Ctx = aeronCtxTpl
+            .aeronDirectoryName(aeron2Dir);
+
+        final Aeron aeron2 = Aeron.connect(aeron2Ctx.clone());
+        addCloseable(aeron2);
+
+        final String archiveControlRequestChannel = "aeron:udp?endpoint=localhost:8011";
+        final File remoteArchiveDir = new File(SystemUtil.tmpDirName(), "remoteArchiveDir");
+
+        final Archive.Context remoteArchiveCtx = archiveCtx.clone()
+            .archiveDir(remoteArchiveDir)
+            .aeronDirectoryName(aeron2Dir)
+            .controlChannel(archiveControlRequestChannel)
+            .deleteArchiveOnStart(false);
+
+        final Archive archive = Archive.launch(remoteArchiveCtx.clone());
+        addCloseable(archive);
+        systemTestWatcher.dataCollector().add(remoteArchiveCtx.archiveDir());
+
+        final AeronArchive.Context remoteAeronArchiveContext = TestContexts.localhostAeronArchive()
+            .controlRequestChannel(archiveControlRequestChannel)
+            .aeron(aeron2);
+
+        final AeronArchive remoteArchive = AeronArchive.connect(remoteAeronArchiveContext.clone());
+        addCloseable(remoteArchive);
+        assert remoteArchive != null;
+
+        final ExclusivePublication exclusivePublication = aeron.addExclusivePublication(MDC_PUBLICATION_CHANNEL, STREAM_ID);
+        remoteArchive.startRecording(MDC_SUBSCRIPTION_CHANNEL, STREAM_ID, SourceLocation.REMOTE);
+        Tests.awaitConnected(exclusivePublication);
+
+        final PersistentPublication persistentPublication =
+            PersistentPublication.create(remoteArchive, exclusivePublication);
+
+        persistentSubscriptionCtx
+            .liveChannel(MDC_SUBSCRIPTION_CHANNEL)
+            .recordingId(persistentPublication.recordingId())
+            .aeronArchiveContext(remoteAeronArchiveContext)
+            .startPosition(FROM_START);
+
+        final List<byte[]> payloads64 = generateFixedPayloads(64, ONE_KB_MESSAGE_SIZE);
+        final List<byte[]> payloads1 = generateFixedPayloads(1, ONE_KB_MESSAGE_SIZE);
+
+        persistentPublication.persist(payloads1);
+
+        try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
+        {
+            executeUntil(persistentSubscription::isLive,
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+
+            assertEquals(1, fragmentHandler.receivedPayloads.size());
+
+            persistentPublication.persist(payloads64);
+            persistentPublication.persist(payloads1);
+
+            archive.close();
+            aeron2.close();
+            mediaDriver2.close();
+            addCloseable(TestMediaDriver.launch(driver2Ctx.clone(), systemTestWatcher));
+            addCloseable(Aeron.connect(aeron2Ctx.clone()));
+            addCloseable(Archive.launch(remoteArchiveCtx.clone()));
+
+            executeUntil(
+                persistentSubscription::isReplaying,
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+            );
+            executeUntil(
+                persistentSubscription::isLive,
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+            );
+            assertPayloads(fragmentHandler.receivedPayloads, payloads1, payloads64, payloads1);
+        }
+    }
+
     private static ReceiveChannelEndpointSupplier receiveChannelEndpointSupplier(final LossGenerator lossGenerator)
     {
         return (udpChannel, dispatcher, statusIndicator, context) ->
@@ -1845,6 +1935,24 @@ class PersistentSubscriptionTest
             final int streamId)
         {
             final ExclusivePublication publication = aeronArchive.addRecordedExclusivePublication(channel, streamId);
+            final CountersReader countersReader = aeronArchive.context().aeron().countersReader();
+            final int recordingCounterId =
+                Tests.awaitRecordingCounterId(countersReader, publication.sessionId(), aeronArchive.archiveId());
+            final long recordingId = RecordingPos.getRecordingId(countersReader, recordingCounterId);
+
+            return new PersistentPublication(
+                aeronArchive,
+                publication,
+                recordingId,
+                countersReader,
+                recordingCounterId);
+        }
+
+        static PersistentPublication create(
+            final AeronArchive aeronArchive,
+            final ExclusivePublication publication
+            )
+        {
             final CountersReader countersReader = aeronArchive.context().aeron().countersReader();
             final int recordingCounterId =
                 Tests.awaitRecordingCounterId(countersReader, publication.sessionId(), aeronArchive.archiveId());
