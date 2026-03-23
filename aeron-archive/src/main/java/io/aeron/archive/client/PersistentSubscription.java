@@ -1415,8 +1415,9 @@ public final class PersistentSubscription implements AutoCloseable
             if (replayChannelUri.hasControlModeResponse())
             {
                 final String controlRequestChannel = aeronArchiveContext.controlRequestChannel();
-                if (controlRequestChannel != null && !replayChannelUri.isIpc() == ChannelUri.parse(controlRequestChannel)
-                    .isIpc())
+                if (controlRequestChannel != null &&
+                    !replayChannelUri.isIpc() == ChannelUri.parse(controlRequestChannel).isIpc()
+                )
                 {
                     throw new ConfigurationException(
                         "Channel media type mismatch. " +
@@ -1449,52 +1450,105 @@ public final class PersistentSubscription implements AutoCloseable
             return isConcluded;
         }
 
+        /**
+         * {@link Aeron} client for communicating with the local Media Driver.
+         * <p>
+         * This client will be closed when the {@link PersistentSubscription#close()} or {@link #close()} methods are
+         * called if {@link #ownsAeronClient()} is true.
+         *
+         * @param aeron client for communicating with the local Media Driver.
+         * @return this for a fluent API.
+         * @see Aeron#connect()
+         */
         public Context aeron(final Aeron aeron)
         {
             this.aeron = aeron;
             return this;
         }
 
+        /**
+         * {@link Aeron} client for communicating with the local Media Driver.
+         * <p>
+         * If not provided then a default will be established during {@link #conclude()} by calling
+         * {@link Aeron#connect()}.
+         *
+         * @return client for communicating with the local Media Driver.
+         */
         public Aeron aeron()
         {
             return aeron;
         }
 
+        /**
+         * Does this context own the {@link #aeron()} client and thus take responsibility for closing it?
+         *
+         * @param ownsAeronClient does this context own the {@link #aeron()} client?
+         * @return this for a fluent API.
+         */
         public Context ownsAeronClient(final boolean ownsAeronClient)
         {
             this.ownsAeronClient = ownsAeronClient;
             return this;
         }
 
+        /**
+         * Does this context own the {@link #aeron()} client and thus take responsibility for closing it?
+         *
+         * @return does this context own the {@link #aeron()} client and thus take responsibility for closing it?
+         */
         public boolean ownsAeronClient()
         {
             return ownsAeronClient;
         }
 
+        /**
+         * Set the top level Aeron directory used for communication between the Aeron client and Media Driver.
+         *
+         * @param aeronDirectoryName the top level Aeron directory.
+         * @return this for a fluent API.
+         */
         public Context aeronDirectoryName(final String aeronDirectoryName)
         {
             this.aeronDirectoryName = aeronDirectoryName;
             return this;
         }
 
+        /**
+         * Get the top level Aeron directory used for communication between the Aeron client and Media Driver.
+         *
+         * @return The top level Aeron directory.
+         */
         public String aeronDirectoryName()
         {
             return aeronDirectoryName;
         }
 
+        /**
+         * Set the id of the recording to replay from.
+         *
+         * @param recordingId the recording's id.
+         * @return this for a fluent API.
+         */
         public Context recordingId(final long recordingId)
         {
             this.recordingId = recordingId;
             return this;
         }
 
+        /**
+         * Get the id of the recording to replay from.
+         *
+         * @return the recordingId.
+         */
         public long recordingId()
         {
             return recordingId;
         }
 
         /**
-         * The position to start consuming from or {@link #FROM_START} or {@link #FROM_LIVE}.
+         * Set the position to start consuming from.
+         * This can be a point in the recording, the start of the recording ({@link #FROM_START}) or directly
+         * from live ({@link #FROM_LIVE}).
          *
          * @param startPosition the position to start consuming from.
          * @return this for a fluent API.
@@ -1505,6 +1559,11 @@ public final class PersistentSubscription implements AutoCloseable
             return this;
         }
 
+        /**
+         * Get the position to start consuming from.
+         *
+         * @return the start position.
+         */
         public long startPosition()
         {
             return startPosition;
@@ -1554,28 +1613,59 @@ public final class PersistentSubscription implements AutoCloseable
             return replayStreamId;
         }
 
+        /**
+         * Set the {@link PersistentSubscriptionListener} to use for the {@code PersistentSubscription}.
+         *
+         * @param listener to use for the {@code PersistentSubscription}.
+         * @return this for a fluent API.
+         * @see PersistentSubscriptionListener
+         */
         public Context listener(final PersistentSubscriptionListener listener)
         {
             this.listener = listener;
             return this;
         }
 
+        /**
+         * Set the {@link PersistentSubscriptionListener} in use for the {@code PersistentSubscription}.
+         *
+         * @return the {@code PersistentSubscriptionListener} in use.
+         */
         public PersistentSubscriptionListener listener()
         {
             return listener;
         }
 
+        /**
+         * Set the {@link io.aeron.archive.client.AeronArchive.Context} that should be used for communicating with an
+         * Archive.
+         *
+         * @param aeronArchiveContext that should be used for communicating with an Archive.
+         * @return this for a fluent API.
+         */
         public Context aeronArchiveContext(final AeronArchive.Context aeronArchiveContext)
         {
             this.aeronArchiveContext = aeronArchiveContext;
             return this;
         }
 
+        /**
+         * Get the {@link io.aeron.archive.client.AeronArchive.Context} that should be used for communicating with an
+         * Archive.
+         *
+         * @return the {@link io.aeron.archive.client.AeronArchive.Context} that should be used for communicating
+         * with an Archive.
+         */
         public AeronArchive.Context aeronArchiveContext()
         {
             return aeronArchiveContext;
         }
 
+        /**
+         * Close the context and free applicable resources.
+         * <p>
+         * If {@link #ownsAeronClient()} is true then the {@link #aeron()} client will be closed.
+         */
         public void close()
         {
             if (ownsAeronClient)
