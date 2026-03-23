@@ -450,8 +450,8 @@ public final class PersistentSubscription implements AutoCloseable
 
         final String channel = switch (replayChannelType)
         {
-            case SESSION_SPECIFIC, RESPONSE_CHANNEL -> replayChannel;
-            case DYNAMIC_PORT -> replayChannelUri.toString();
+            case SESSION_SPECIFIC -> replayChannel;
+            case DYNAMIC_PORT, RESPONSE_CHANNEL -> replayChannelUri.toString();
         };
 
         replayParams.reset();
@@ -775,7 +775,14 @@ public final class PersistentSubscription implements AutoCloseable
         }
 
         replayToken = replayTokenRequest.relevantId;
-        state(State.SEND_REPLAY_REQUEST);
+        if (replayChannelUri.isIpc())
+        {
+            state(State.SEND_REPLAY_REQUEST);
+        }
+        else
+        {
+            state(State.AWAIT_REPLAY_CHANNEL_ENDPOINT);
+        }
         return 1;
     }
 
