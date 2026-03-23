@@ -35,6 +35,7 @@ import io.aeron.driver.ThreadingMode;
 import io.aeron.driver.ext.DebugReceiveChannelEndpoint;
 import io.aeron.driver.ext.LossGenerator;
 import io.aeron.driver.status.SubscriberPos;
+import io.aeron.exceptions.TimeoutException;
 import io.aeron.logbuffer.ControlledFragmentHandler;
 import io.aeron.logbuffer.FragmentHandler;
 import io.aeron.logbuffer.Header;
@@ -98,6 +99,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
@@ -234,22 +236,18 @@ class PersistentSubscriptionTest
     }
 
     @Test
-    @InterruptAfter(10)
-    void shouldErrorWhenArchiveCannotConnect()
+    @InterruptAfter(5)
+    void shouldRetryArchiveConnectionIndefinitelyWhenStartingFromArchive()
     {
         final AeronArchive.Context archiveContext  = aeronArchiveContext.clone()
             .controlRequestChannel("aeron:udp?endpoint=localhost:49581|alias=non_existing_endpoint")
             .messageTimeoutNs(TimeUnit.MILLISECONDS.toNanos(500));
         persistentSubscriptionCtx.aeronArchiveContext(archiveContext);
-
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
-            executeUntil(persistentSubscription::hasFailed, () -> persistentSubscription.controlledPoll(null, 1));
-
-            assertEquals(1, listener.errorCount);
-            Assertions.assertEquals(
-               "Sorry cannot talk to archive at the moment", //TODO update to something more serious
-                ((PersistentSubscriptionException)listener.lastException).reason()
+            assertThrows(
+                TimeoutException.class,
+                () -> executeUntil(persistentSubscription::hasFailed, () -> persistentSubscription.controlledPoll(null, 1))
             );
         }
     }
@@ -1104,30 +1102,27 @@ class PersistentSubscriptionTest
     }
 
 
-    @InterruptAfter(10)
+    @InterruptAfter(5)
     @Test
-    void shouldErrorWhenStartFromLiveAndLiveCannotConnect(){
+    void shouldRetryLiveConnectionIndefinitelyWhenStartingFromLive(){
         final PersistentPublication persistentPublication =
             PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
 
         final List<byte[]> payloads = generateRandomPayloads(5);
         persistentPublication.persist(payloads);
 
-        final String publicationChannel = "aeron:udp?control=localhost:49583|control-mode=dynamic|fc=max";
+        final String livePublicationChannel = "aeron:udp?control=localhost:49583|control-mode=dynamic|fc=max|alias=non_existing_endpoint";
 
         persistentSubscriptionCtx
             .recordingId(persistentPublication.recordingId())
             .startPosition(FROM_LIVE)
-            .liveChannel(publicationChannel);
+            .liveChannel(livePublicationChannel);
 
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
-            executeUntil(persistentSubscription::hasFailed, () -> persistentSubscription.controlledPoll(null, 1));
-
-            assertEquals(1, listener.errorCount);
-            Assertions.assertEquals(
-                "Sorry cannot connect to live stream within timeout of ", //TODO update to something more serious
-                listener.lastException.getMessage()
+            assertThrows(
+                TimeoutException.class,
+                () -> executeUntil(persistentSubscription::hasFailed, () -> persistentSubscription.controlledPoll(null, 1))
             );
         }
     }
