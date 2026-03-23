@@ -27,10 +27,15 @@
 
 #define transition(persistent_subscription, new_state) \
     do {                                               \
-        printf("-> " #new_state "\n");                 \
-        fflush(stdout);                                \
         persistent_subscription->state = new_state;    \
     } while (0)
+
+// #define transition(persistent_subscription, new_state) \
+// do {                                               \
+//      printf("-> " #new_state "\n");                 \
+//      fflush(stdout);                                \
+//      persistent_subscription->state = new_state;    \
+// } while (0)
 
 struct aeron_archive_persistent_subscription_context_stct
 {
