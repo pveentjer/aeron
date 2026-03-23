@@ -1276,138 +1276,26 @@ public final class PersistentSubscription implements AutoCloseable
         private PersistentSubscriptionListener listener = null;
         private AeronArchive.Context aeronArchiveContext = null;
 
-        public Context aeron(final Aeron aeron)
+        /**
+         * Perform a shallow copy of the object.
+         *
+         * @return a shallow copy of the object.
+         */
+        public Context clone()
         {
-            this.aeron = aeron;
-            return this;
-        }
-
-        public Aeron aeron()
-        {
-            return aeron;
-        }
-
-        public boolean ownsAeronClient()
-        {
-            return ownsAeronClient;
-        }
-
-        public Context ownsAeronClient(final boolean ownsAeronClient)
-        {
-            this.ownsAeronClient = ownsAeronClient;
-            return this;
-        }
-
-        public String aeronDirectoryName()
-        {
-            return aeronDirectoryName;
-        }
-
-        public Context aeronDirectoryName(final String aeronDirectoryName)
-        {
-            this.aeronDirectoryName = aeronDirectoryName;
-            return this;
-        }
-
-        public Context recordingId(final long recordingId)
-        {
-            this.recordingId = recordingId;
-            return this;
+            try
+            {
+                return (Context)super.clone();
+            }
+            catch (final CloneNotSupportedException ex)
+            {
+                throw new RuntimeException(ex);
+            }
         }
 
         /**
-         * The position to start consuming from or {@link #FROM_START} or {@link #FROM_LIVE}.
-         *
-         * @param startPosition the position to start consuming from.
-         * @return this for a fluent API.
+         * Conclude configuration by setting up defaults when specifics are not provided.
          */
-        public Context startPosition(final long startPosition)
-        {
-            this.startPosition = startPosition;
-            return this;
-        }
-
-        public Context liveChannel(final String liveChannel)
-        {
-            this.liveChannel = liveChannel;
-            return this;
-        }
-
-        public Context liveStreamId(final int liveStreamId)
-        {
-            this.liveStreamId = liveStreamId;
-            return this;
-        }
-
-        public Context replayChannel(final String replayChannel)
-        {
-            this.replayChannel = replayChannel;
-            return this;
-        }
-
-        public Context replayStreamId(final int replayStreamId)
-        {
-            this.replayStreamId = replayStreamId;
-            return this;
-        }
-
-        public Context listener(final PersistentSubscriptionListener listener)
-        {
-            this.listener = listener;
-            return this;
-        }
-
-        public Context aeronArchiveContext(final AeronArchive.Context aeronArchiveContext)
-        {
-            this.aeronArchiveContext = aeronArchiveContext;
-            return this;
-        }
-
-        public long recordingId()
-        {
-            return recordingId;
-        }
-
-        public long startPosition()
-        {
-            return startPosition;
-        }
-
-        public String liveChannel()
-        {
-            return liveChannel;
-        }
-
-        public int liveStreamId()
-        {
-            return liveStreamId;
-        }
-
-        public String replayChannel()
-        {
-            return replayChannel;
-        }
-
-        public int replayStreamId()
-        {
-            return replayStreamId;
-        }
-
-        public PersistentSubscriptionListener listener()
-        {
-            return listener;
-        }
-
-        public AeronArchive.Context aeronArchiveContext()
-        {
-            return aeronArchiveContext;
-        }
-
-        public boolean isConcluded()
-        {
-            return isConcluded;
-        }
-
         public void conclude()
         {
             if ((boolean)IS_CONCLUDED_VH.getAndSet(this, true))
@@ -1474,20 +1362,140 @@ public final class PersistentSubscription implements AutoCloseable
         }
 
         /**
-         * Perform a shallow copy of the object.
+         * Has the context had the {@link #conclude()} method called.
          *
-         * @return a shallow copy of the object.
+         * @return true of the {@link #conclude()} method has been called.
          */
-        public Context clone()
+        public boolean isConcluded()
         {
-            try
-            {
-                return (Context)super.clone();
-            }
-            catch (final CloneNotSupportedException ex)
-            {
-                throw new RuntimeException(ex);
-            }
+            return isConcluded;
+        }
+
+        public Context aeron(final Aeron aeron)
+        {
+            this.aeron = aeron;
+            return this;
+        }
+
+        public Aeron aeron()
+        {
+            return aeron;
+        }
+
+        public Context ownsAeronClient(final boolean ownsAeronClient)
+        {
+            this.ownsAeronClient = ownsAeronClient;
+            return this;
+        }
+
+        public boolean ownsAeronClient()
+        {
+            return ownsAeronClient;
+        }
+
+        public Context aeronDirectoryName(final String aeronDirectoryName)
+        {
+            this.aeronDirectoryName = aeronDirectoryName;
+            return this;
+        }
+
+        public String aeronDirectoryName()
+        {
+            return aeronDirectoryName;
+        }
+
+        public Context recordingId(final long recordingId)
+        {
+            this.recordingId = recordingId;
+            return this;
+        }
+
+        public long recordingId()
+        {
+            return recordingId;
+        }
+
+        /**
+         * The position to start consuming from or {@link #FROM_START} or {@link #FROM_LIVE}.
+         *
+         * @param startPosition the position to start consuming from.
+         * @return this for a fluent API.
+         */
+        public Context startPosition(final long startPosition)
+        {
+            this.startPosition = startPosition;
+            return this;
+        }
+
+        public long startPosition()
+        {
+            return startPosition;
+        }
+
+        public Context liveChannel(final String liveChannel)
+        {
+            this.liveChannel = liveChannel;
+            return this;
+        }
+
+        public String liveChannel()
+        {
+            return liveChannel;
+        }
+
+        public Context liveStreamId(final int liveStreamId)
+        {
+            this.liveStreamId = liveStreamId;
+            return this;
+        }
+
+        public int liveStreamId()
+        {
+            return liveStreamId;
+        }
+
+        public Context replayChannel(final String replayChannel)
+        {
+            this.replayChannel = replayChannel;
+            return this;
+        }
+
+        public String replayChannel()
+        {
+            return replayChannel;
+        }
+
+        public Context replayStreamId(final int replayStreamId)
+        {
+            this.replayStreamId = replayStreamId;
+            return this;
+        }
+
+        public int replayStreamId()
+        {
+            return replayStreamId;
+        }
+
+        public Context listener(final PersistentSubscriptionListener listener)
+        {
+            this.listener = listener;
+            return this;
+        }
+
+        public PersistentSubscriptionListener listener()
+        {
+            return listener;
+        }
+
+        public Context aeronArchiveContext(final AeronArchive.Context aeronArchiveContext)
+        {
+            this.aeronArchiveContext = aeronArchiveContext;
+            return this;
+        }
+
+        public AeronArchive.Context aeronArchiveContext()
+        {
+            return aeronArchiveContext;
         }
 
         public void close()
