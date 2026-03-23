@@ -23,9 +23,35 @@ import org.agrona.concurrent.ringbuffer.RingBuffer;
 
 import java.util.EnumSet;
 
-import static io.aeron.agent.ArchiveEventCode.*;
-import static io.aeron.agent.ArchiveEventEncoder.*;
-import static io.aeron.agent.CommonEventEncoder.*;
+import static io.aeron.agent.ArchiveEventCode.CATALOG_RESIZE;
+import static io.aeron.agent.ArchiveEventCode.CMD_OUT_RESPONSE;
+import static io.aeron.agent.ArchiveEventCode.CONTROL_SESSION_STATE_CHANGE;
+import static io.aeron.agent.ArchiveEventCode.PERSISTENT_SUBSCRIPTION_STATE_CHANGE;
+import static io.aeron.agent.ArchiveEventCode.RECORDING_SESSION_STATE_CHANGE;
+import static io.aeron.agent.ArchiveEventCode.RECORDING_SIGNAL;
+import static io.aeron.agent.ArchiveEventCode.REPLAY_SESSION_ERROR;
+import static io.aeron.agent.ArchiveEventCode.REPLAY_SESSION_STATE_CHANGE;
+import static io.aeron.agent.ArchiveEventCode.REPLICATION_SESSION_DONE;
+import static io.aeron.agent.ArchiveEventCode.REPLICATION_SESSION_STATE_CHANGE;
+import static io.aeron.agent.ArchiveEventCode.getByTemplateId;
+import static io.aeron.agent.ArchiveEventEncoder.encodeCatalogResize;
+import static io.aeron.agent.ArchiveEventEncoder.encodeControlSessionStateChange;
+import static io.aeron.agent.ArchiveEventEncoder.encodePersistentSubscriptionStateChange;
+import static io.aeron.agent.ArchiveEventEncoder.encodeRecordingSessionStateChange;
+import static io.aeron.agent.ArchiveEventEncoder.encodeReplaySessionError;
+import static io.aeron.agent.ArchiveEventEncoder.encodeReplaySessionStateChange;
+import static io.aeron.agent.ArchiveEventEncoder.encodeReplicationSessionDone;
+import static io.aeron.agent.ArchiveEventEncoder.encodeReplicationSessionStateChange;
+import static io.aeron.agent.ArchiveEventEncoder.persistentSubscriptionStateChangeLength;
+import static io.aeron.agent.ArchiveEventEncoder.recordingSessionStateChangeLength;
+import static io.aeron.agent.ArchiveEventEncoder.replaySessionStateChangeLength;
+import static io.aeron.agent.ArchiveEventEncoder.replicationSessionDoneLength;
+import static io.aeron.agent.ArchiveEventEncoder.replicationSessionStateChangeLength;
+import static io.aeron.agent.ArchiveEventEncoder.sessionStateChangeLength;
+import static io.aeron.agent.CommonEventEncoder.captureLength;
+import static io.aeron.agent.CommonEventEncoder.encode;
+import static io.aeron.agent.CommonEventEncoder.encodedLength;
+import static io.aeron.agent.CommonEventEncoder.stateTransitionStringLength;
 import static io.aeron.agent.EventConfiguration.EVENT_RING_BUFFER;
 import static java.util.EnumSet.complementOf;
 import static java.util.EnumSet.of;
@@ -146,6 +172,38 @@ public final class ArchiveEventLogger
                     recordingId,
                     position,
                     reason);
+            }
+            finally
+            {
+                ringBuffer.commit(index);
+            }
+        }
+    }
+
+    public <E extends Enum<E>> void logPersistentSubscriptionStateChange(
+        final E oldState,
+        final E newState,
+        final long recordingId)
+    {
+        final int length = persistentSubscriptionStateChangeLength(oldState, newState);
+        final int captureLength = captureLength(length);
+        final int encodedLength = encodedLength(captureLength);
+        final ManyToOneRingBuffer ringBuffer = this.ringBuffer;
+        final int index = ringBuffer.tryClaim(PERSISTENT_SUBSCRIPTION_STATE_CHANGE.toEventCodeId(), encodedLength);
+
+        if (index > 0)
+        {
+            try
+            {
+                encodePersistentSubscriptionStateChange(
+                    (UnsafeBuffer)ringBuffer.buffer(),
+                    index,
+                    captureLength,
+                    length,
+                    oldState,
+                    newState,
+                    recordingId
+                );
             }
             finally
             {

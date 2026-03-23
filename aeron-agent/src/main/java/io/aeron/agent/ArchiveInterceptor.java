@@ -129,4 +129,17 @@ class ArchiveInterceptor
             LOGGER.logCatalogResize(catalogLength, newCatalogLength);
         }
     }
+
+    static class PersistentSubscriptionStateChange
+    {
+        @Advice.OnMethodEnter
+        static <E extends Enum<E>> void logStateChange(
+            final E oldState,
+            final E newState,
+            final long recordingId)
+        {
+            LOGGER.logPersistentSubscriptionStateChange(oldState, newState, recordingId);
+        }
+    }
+
 }
