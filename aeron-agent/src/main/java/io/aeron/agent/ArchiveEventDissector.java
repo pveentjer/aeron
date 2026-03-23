@@ -657,6 +657,22 @@ final class ArchiveEventDissector
         builder.append(": ").append(catalogLength).append(" bytes => ").append(newCatalogLength).append(" bytes");
     }
 
+
+    public static void dissectPersistentSubscriptionStateChange(
+        final ArchiveEventCode eventCode,
+        final MutableDirectBuffer buffer,
+        final int offset,
+        final StringBuilder builder)
+    {
+        int absoluteOffset = offset;
+        absoluteOffset += dissectLogHeader(CONTEXT, eventCode, buffer, absoluteOffset, builder);
+
+        absoluteOffset += buffer.getStringAscii(absoluteOffset, builder, LITTLE_ENDIAN);
+        absoluteOffset += SIZE_OF_INT;
+        final long recordingId = buffer.getLong(absoluteOffset);
+        builder.append(" recordingId=").append(recordingId);
+    }
+
     private static void appendConnect(final StringBuilder builder)
     {
         builder.append(": correlationId=").append(CONNECT_REQUEST_DECODER.correlationId())

@@ -146,6 +146,13 @@ public final class ArchiveComponentLogger implements ComponentLogger
             ArchiveInterceptor.Catalog.class,
             "catalogResized");
 
+        tempBuilder = addEventInstrumentation(
+            tempBuilder,
+            PERSISTENT_SUBSCRIPTION_STATE_CHANGE,
+            "PersistentSubscription",
+            ArchiveInterceptor.PersistentSubscriptionStateChange.class,
+            "logStateChange");
+
         return tempBuilder;
     }
 
