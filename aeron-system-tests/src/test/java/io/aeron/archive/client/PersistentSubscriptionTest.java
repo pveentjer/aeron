@@ -490,13 +490,13 @@ class PersistentSubscriptionTest
         final List<byte[]> payloads = generateRandomPayloads(5);
         persistentPublication.persist(payloads);
 
-        persistentSubscriptionCtx.aeronArchiveContext().controlRequestChannel(archiveControlRequestChannel);
-
         persistentSubscriptionCtx
             .recordingId(persistentPublication.recordingId())
             .replayChannel(replayChannel)
             .replayStreamId(replayStreamId)
-            .aeronArchiveContext().controlResponseChannel(archiveControlResponseChannel);
+            .aeronArchiveContext()
+            .controlResponseChannel(archiveControlResponseChannel)
+            .controlRequestChannel(archiveControlRequestChannel);
 
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
@@ -671,7 +671,7 @@ class PersistentSubscriptionTest
 
             assertTrue(persistentSubscription.isLive());
             assertFalse(persistentSubscription.isReplaying());
-//            assertThat(persistentSubscription.joinError(), greaterThan(0L)); // TODO this test does not guarantee this.
+//          assertThat(persistentSubscription.joinError(), greaterThan(0L)); // TODO this test does not guarantee this.
             assertPayloads(fragmentHandler.receivedPayloads, payloads, payloads2, payloads3);
 
             Tests.await(() -> archive.context().replaySessionCounter().get() == 0);
@@ -2008,12 +2008,35 @@ class PersistentSubscriptionTest
     private static Stream<Arguments> replayChannelsAndStreams()
     {
         return Stream.of(
-            arguments("aeron:udp?endpoint=localhost:0", -10, LOCALHOST_CONTROL_REQUEST_CHANNEL, LOCALHOST_CONTROL_RESPONSE_CHANNEL),
-            arguments("aeron:udp?endpoint=localhost:10001", -11, LOCALHOST_CONTROL_REQUEST_CHANNEL, LOCALHOST_CONTROL_RESPONSE_CHANNEL),
+            arguments("aeron:udp?endpoint=localhost:0",
+                -10,
+                LOCALHOST_CONTROL_REQUEST_CHANNEL,
+                LOCALHOST_CONTROL_RESPONSE_CHANNEL
+            ),
+            arguments(
+                "aeron:udp?endpoint=localhost:10001",
+                -11,
+                LOCALHOST_CONTROL_REQUEST_CHANNEL,
+                LOCALHOST_CONTROL_RESPONSE_CHANNEL
+            ),
             arguments("aeron:ipc", -12, LOCALHOST_CONTROL_REQUEST_CHANNEL, LOCALHOST_CONTROL_RESPONSE_CHANNEL),
-            arguments("aeron:udp?control=localhost:10001|control-mode=response", -11, LOCALHOST_CONTROL_REQUEST_CHANNEL, "aeron:udp?control-mode=response|control=localhost:10002"),
-            arguments("aeron:udp?control=localhost:10001|control-mode=response|endpoint=localhost:5006", -11, LOCALHOST_CONTROL_REQUEST_CHANNEL, "aeron:udp?control-mode=response|control=localhost:10002"),
-            arguments("aeron:udp?control=localhost:10001|control-mode=response|endpoint=localhost:0", -11, LOCALHOST_CONTROL_REQUEST_CHANNEL, "aeron:udp?control-mode=response|control=localhost:10002"),
+            arguments(
+                "aeron:udp?control=localhost:10001|control-mode=response",
+                -11,
+                LOCALHOST_CONTROL_REQUEST_CHANNEL,
+                "aeron:udp?control-mode=response|control=localhost:10002"
+            ),
+            arguments(
+                "aeron:udp?control=localhost:10001|control-mode=response|endpoint=localhost:5006",
+                -11,
+                LOCALHOST_CONTROL_REQUEST_CHANNEL,
+                "aeron:udp?control-mode=response|control=localhost:10002"
+            ),
+            arguments(
+                "aeron:udp?control=localhost:10001|control-mode=response|endpoint=localhost:0",
+                -11,
+                LOCALHOST_CONTROL_REQUEST_CHANNEL,
+                "aeron:udp?control-mode=response|control=localhost:10002"),
             arguments("aeron:ipc?control-mode=response", -11, "aeron:ipc", "aeron:ipc?control-mode=response")
         );
     }
