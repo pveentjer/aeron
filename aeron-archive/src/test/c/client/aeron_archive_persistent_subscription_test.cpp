@@ -1276,6 +1276,13 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldDropFromLiveBackToReplayThe
     ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
 }
 
+// Verifies that an untethered persistent subscription can fall behind a tethered subscription
+// without blocking it. An untethered persistent subscription and a tethered subscription are
+// created on the same channel. Once the persistent subscription becomes live, 64 messages of
+// 1KB each are published, filling the 64KB term buffer. Only the tethered subscription is
+// polled during this time, causing the publisher to advance past the untethered persistent
+// subscription's image, which is then closed by the media driver. The persistent subscription
+// drops back to replay to catch up on all 64 messages and then transitions back to live.
 TEST_F(AeronArchivePersistentSubscriptionTest, anUntetheredPersistentSubscriptionCanFallBehindATetheredSubscription)
 {
     TestArchive archive = createArchive(m_aeronDir);
@@ -1330,6 +1337,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, anUntetheredPersistentSubscriptio
         poller,
         [&] { return aeron_archive_persistent_subscription_is_live(persistent_subscription); });
 
+    // the term buffer is 64 KB
     const std::vector<std::vector<uint8_t>> payloads = generateFixedMessages(64, ONE_KB_MESSAGE_SIZE);
     persistent_publication.persist(payloads);
 
@@ -1348,6 +1356,10 @@ TEST_F(AeronArchivePersistentSubscriptionTest, anUntetheredPersistentSubscriptio
                 10);
         },
         [&] { return fast_count >= 64; });
+
+    aeron_image_t *image = aeron_subscription_image_at_index(tethered_subscription, 0);
+    printf("tethered_rcv_pos=%" PRId64 "\n", aeron_image_position(image));
+    fflush(stdout);
 
     executeUntil(
         "persistent subscription receives 64 messages",
