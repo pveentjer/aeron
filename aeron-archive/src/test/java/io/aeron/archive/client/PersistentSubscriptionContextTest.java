@@ -170,23 +170,63 @@ class PersistentSubscriptionContextTest
     {
         return Stream.of(
             arguments(true, "aeron:udp?endpoint=localhost:0", null, null),
-            arguments(true, "aeron:udp?endpoint=localhost:0", "aeron:udp?endpoint=localhost:8010", "aeron:udp?endpoint=localhost:0"),
-            arguments(true, "aeron:udp?endpoint=localhost:0", "aeron:udp?endpoint=localhost:8010", "aeron:udp?control-mode=response|control=localhost:10002"),
+            arguments(
+              true,
+              "aeron:udp?endpoint=localhost:0",
+              "aeron:udp?endpoint=localhost:8010",
+              "aeron:udp?endpoint=localhost:0"
+            ),
+            arguments(
+              true,
+              "aeron:udp?endpoint=localhost:0",
+              "aeron:udp?endpoint=localhost:8010",
+              "aeron:udp?control-mode=response|control=localhost:10002"
+            ),
             arguments(true, "aeron:udp?endpoint=localhost:0", "aeron:ipc", "aeron:ipc"),
             arguments(true, "aeron:udp?endpoint=localhost:0", "aeron:ipc", "aeron:ipc?control-mode=response"),
             arguments(true, "aeron:udp?control=localhost:10001|control-mode=response", null, null),
-            arguments(true, "aeron:udp?control=localhost:10001|control-mode=response", "aeron:udp?endpoint=localhost:8010", "aeron:udp?endpoint=localhost:0"),
-            arguments(true, "aeron:udp?control=localhost:10001|control-mode=response", "aeron:udp?endpoint=localhost:8010", "aeron:udp?control-mode=response|control=localhost:10002"),
+            arguments(
+              true,
+              "aeron:udp?control=localhost:10001|control-mode=response",
+              "aeron:udp?endpoint=localhost:8010",
+              "aeron:udp?endpoint=localhost:0"
+            ),
+            arguments(
+              true,
+              "aeron:udp?control=localhost:10001|control-mode=response",
+              "aeron:udp?endpoint=localhost:8010",
+              "aeron:udp?control-mode=response|control=localhost:10002"
+            ),
             arguments(false, "aeron:udp?control=localhost:10001|control-mode=response", "aeron:ipc", "aeron:ipc"),
-            arguments(false, "aeron:udp?control=localhost:10001|control-mode=response", "aeron:ipc", "aeron:ipc?control-mode=response"),
+            arguments(
+              false,
+              "aeron:udp?control=localhost:10001|control-mode=response",
+              "aeron:ipc",
+              "aeron:ipc?control-mode=response"
+            ),
             arguments(true, "aeron:ipc", null, null),
             arguments(true, "aeron:ipc", "aeron:udp?endpoint=localhost:8010", "aeron:udp?endpoint=localhost:0"),
-            arguments(true, "aeron:ipc", "aeron:udp?endpoint=localhost:8010", "aeron:udp?control-mode=response|control=localhost:10002"),
+            arguments(
+              true,
+              "aeron:ipc",
+              "aeron:udp?endpoint=localhost:8010",
+              "aeron:udp?control-mode=response|control=localhost:10002"
+            ),
             arguments(true, "aeron:ipc", "aeron:ipc", "aeron:ipc"),
             arguments(true, "aeron:ipc", "aeron:ipc", "aeron:ipc?control-mode=response"),
             arguments(true, "aeron:ipc?control-mode=response", null, null),
-            arguments(false, "aeron:ipc?control-mode=response", "aeron:udp?endpoint=localhost:8010", "aeron:udp?endpoint=localhost:0"),
-            arguments(false, "aeron:ipc?control-mode=response", "aeron:udp?endpoint=localhost:8010", "aeron:udp?control-mode=response|control=localhost:10002"),
+            arguments(
+              false,
+              "aeron:ipc?control-mode=response",
+              "aeron:udp?endpoint=localhost:8010",
+              "aeron:udp?endpoint=localhost:0"
+            ),
+            arguments(
+              false,
+              "aeron:ipc?control-mode=response",
+              "aeron:udp?endpoint=localhost:8010",
+              "aeron:udp?control-mode=response|control=localhost:10002"
+            ),
             arguments(true, "aeron:ipc?control-mode=response", "aeron:ipc", "aeron:ipc"),
             arguments(true, "aeron:ipc?control-mode=response", "aeron:ipc", "aeron:ipc?control-mode=response")
         );

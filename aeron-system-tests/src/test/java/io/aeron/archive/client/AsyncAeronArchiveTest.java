@@ -307,7 +307,7 @@ class AsyncAeronArchiveTest
 
             if (Thread.interrupted())
             {
-                Description description = new StringDescription();
+                final Description description = new StringDescription();
                 description.appendText("Timed out waiting for condition to become true")
                     .appendText(System.lineSeparator())
                     .appendText("Expected: ")
