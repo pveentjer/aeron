@@ -109,7 +109,13 @@ final class AsyncAeronArchive implements AutoCloseable
         final String replayChannel,
         final ReplayParams replayParams)
     {
-        return trySendReplayRequest(archiveProxy, correlationId, recordingId, replayStreamId, replayChannel, replayParams);
+        return trySendReplayRequest(
+            archiveProxy,
+            correlationId,
+            recordingId,
+            replayStreamId,
+            replayChannel,
+            replayParams);
     }
 
     boolean trySendReplayRequest(

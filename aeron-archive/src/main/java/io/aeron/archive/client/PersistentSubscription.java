@@ -1318,8 +1318,8 @@ public final class PersistentSubscription implements AutoCloseable
         /**
          * The position to start consuming from or {@link #FROM_START} or {@link #FROM_LIVE}.
          *
-         * @param startPosition
-         * @return
+         * @param startPosition the position to start consuming from.
+         * @return this for a fluent API.
          */
         public Context startPosition(final long startPosition)
         {
@@ -1499,7 +1499,7 @@ public final class PersistentSubscription implements AutoCloseable
         }
     }
 
-    private static class NoOpPersistentSubscriptionListener implements PersistentSubscriptionListener
+    private static final class NoOpPersistentSubscriptionListener implements PersistentSubscriptionListener
     {
         public void onLiveJoined()
         {
@@ -1517,7 +1517,7 @@ public final class PersistentSubscription implements AutoCloseable
         }
     }
 
-    private class MaxRecordedPosition extends AsyncArchiveOp
+    private final class MaxRecordedPosition extends AsyncArchiveOp
     {
         private enum MaxRecordedPositionState
         {
@@ -1578,8 +1578,8 @@ public final class PersistentSubscription implements AutoCloseable
                 else
                 {
                     // An error here is not recoverable, so fail the Persistent Subscription.
-                    final ArchiveException archiveException = new ArchiveException("get max position request failed code=" + code +
-                        " relevantId=" + relevantId +
+                    final ArchiveException archiveException = new ArchiveException(
+                        "get max position request failed code=" + code + " relevantId=" + relevantId +
                         " errorMessage='" + errorMessage + "'");
                     listener.onError(archiveException);
                     state(State.FAILED);
@@ -1615,7 +1615,7 @@ public final class PersistentSubscription implements AutoCloseable
         }
     }
 
-    private class ArchiveListener implements AsyncAeronArchiveListener
+    private final class ArchiveListener implements AsyncAeronArchiveListener
     {
         public void onConnected()
         {
