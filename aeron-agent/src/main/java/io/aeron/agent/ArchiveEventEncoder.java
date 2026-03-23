@@ -58,9 +58,30 @@ final class ArchiveEventEncoder
         return encodedLength;
     }
 
+    static <E extends Enum<E>> int encodePersistentSubscriptionStateChange(
+        final UnsafeBuffer encodingBuffer,
+        final int offset,
+        final int captureLength,
+        final int length,
+        final E from,
+        final E to,
+        final long recordingId)
+    {
+        int encodedLength = encodeLogHeader(encodingBuffer, offset, captureLength, length);
+        encodedLength += encodeStateChange(encodingBuffer, offset + encodedLength, from, to);
+        encodingBuffer.putLong(offset + encodedLength, recordingId, LITTLE_ENDIAN);
+        encodedLength += SIZE_OF_LONG;
+        return encodedLength;
+    }
+
     static <E extends Enum<E>> int replaySessionStateChangeLength(final E from, final E to, final String reason)
     {
         return stateTransitionStringLength(from, to) + (3 * SIZE_OF_LONG) + (SIZE_OF_INT + reason.length());
+    }
+
+    static <E extends Enum<E>> int persistentSubscriptionStateChangeLength(final E from, final E to)
+    {
+        return stateTransitionStringLength(from, to) + SIZE_OF_LONG;
     }
 
     static <E extends Enum<E>> int encodeRecordingSessionStateChange(

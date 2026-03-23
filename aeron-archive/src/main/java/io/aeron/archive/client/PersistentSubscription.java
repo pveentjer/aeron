@@ -1091,11 +1091,18 @@ public final class PersistentSubscription implements AutoCloseable
 
     private void state(final State newState)
     {
-        System.out.println("State: " + state + " -> " + newState);
+        // TODO log: replayChannel, liveChannel, replayStreamId, liveStreamId
+        logStateChange(state, newState, recordingId);
         if (newState != this.state)
         {
             this.state = newState;
         }
+    }
+
+    private void logStateChange(
+        final State oldState, final State newState, final long recordingId)
+    {
+        System.out.println("State: " + oldState + " -> " + newState);
     }
 
     private int controlledPoll(
