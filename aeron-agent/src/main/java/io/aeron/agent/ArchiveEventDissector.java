@@ -667,6 +667,7 @@ final class ArchiveEventDissector
         int absoluteOffset = offset;
         absoluteOffset += dissectLogHeader(CONTEXT, eventCode, buffer, absoluteOffset, builder);
 
+        builder.append(": ");
         absoluteOffset += buffer.getStringAscii(absoluteOffset, builder, LITTLE_ENDIAN);
         absoluteOffset += SIZE_OF_INT;
         final long recordingId = buffer.getLong(absoluteOffset);

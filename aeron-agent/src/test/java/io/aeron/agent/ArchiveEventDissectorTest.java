@@ -964,4 +964,19 @@ class ArchiveEventDissectorTest
             builder.toString());
     }
 
+    @Test
+    void persistentSubscriptionStateChange()
+    {
+        internalEncodeLogHeader(buffer, 0, 10, 20, () -> 1_500_000_000L);
+        buffer.putLong(LOG_HEADER_LENGTH, -10_000_000_000L, LITTLE_ENDIAN);
+        final int length = buffer.putStringAscii(LOG_HEADER_LENGTH, "x -> y");
+        buffer.putLong(LOG_HEADER_LENGTH + length, 16);
+
+        dissectPersistentSubscriptionStateChange(ArchiveEventCode.PERSISTENT_SUBSCRIPTION_STATE_CHANGE, buffer, 0, builder);
+
+        assertEquals("[1.500000000] " + CONTEXT + ": " + PERSISTENT_SUBSCRIPTION_STATE_CHANGE.name() + " [10/20]:" +
+                " x -> y" +
+                " recordingId=16",
+            builder.toString());
+    }
 }
