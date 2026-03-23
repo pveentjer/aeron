@@ -556,8 +556,18 @@ public final class PersistentSubscription implements AutoCloseable
 
                 yield 1;
             }
-            case DYNAMIC_PORT, RESPONSE_CHANNEL ->
+            case DYNAMIC_PORT ->
             {
+                replayImageDeadline = nanoClock.nanoTime() + messageTimeoutNs;
+
+                state(State.REPLAY);
+
+                yield 1;
+            }
+            case RESPONSE_CHANNEL ->
+            {
+                cleanUpRequestPublication();
+
                 replayImageDeadline = nanoClock.nanoTime() + messageTimeoutNs;
 
                 state(State.REPLAY);
@@ -798,7 +808,6 @@ public final class PersistentSubscription implements AutoCloseable
             {
                 if (nanoClock.nanoTime() - replayImageDeadline >= 0)
                 {
-                    cleanUpRequestPublication();
                     cleanUpReplay();
                     cleanUpReplaySubscription();
                     setUpReplay();
@@ -814,7 +823,6 @@ public final class PersistentSubscription implements AutoCloseable
 
         if (replayImage.isClosed())
         {
-            cleanUpRequestPublication();
             cleanUpLiveSubscription();
             cleanUpReplay();
             cleanUpReplaySubscription();
@@ -841,7 +849,6 @@ public final class PersistentSubscription implements AutoCloseable
 
                 if (e.errorCode() != ErrorCode.RESOURCE_TEMPORARILY_UNAVAILABLE)
                 {
-                    cleanUpRequestPublication();
                     cleanUpReplay();
                     cleanUpReplaySubscription();
                     state(State.FAILED);
@@ -925,7 +932,6 @@ public final class PersistentSubscription implements AutoCloseable
             if (replayImage.isClosed())
             {
                 position = replayPosition;
-                cleanUpRequestPublication();
                 cleanUpLiveSubscription();
                 cleanUpReplay();
                 cleanUpReplaySubscription();
@@ -963,7 +969,6 @@ public final class PersistentSubscription implements AutoCloseable
 
         if (isLive())
         {
-            cleanUpRequestPublication();
             cleanUpReplay();
             cleanUpReplaySubscription();
             listener.onLiveJoined();
