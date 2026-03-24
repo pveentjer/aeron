@@ -675,6 +675,10 @@ final class ArchiveEventDissector
         absoluteOffset += SIZE_OF_INT;
 
         builder.append(" replayChannel=");
+        absoluteOffset += buffer.getStringAscii(absoluteOffset, builder, LITTLE_ENDIAN);
+        absoluteOffset += SIZE_OF_INT;
+
+        builder.append(" liveChannel=");
         buffer.getStringAscii(absoluteOffset, builder, LITTLE_ENDIAN);
     }
 
