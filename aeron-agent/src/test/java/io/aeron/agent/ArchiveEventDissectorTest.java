@@ -970,15 +970,15 @@ class ArchiveEventDissectorTest
     {
         internalEncodeLogHeader(buffer, 0, 10, 20, () -> 1_500_000_000L);
         buffer.putLong(LOG_HEADER_LENGTH, -10_000_000_000L, LITTLE_ENDIAN);
-        final int length = buffer.putStringAscii(LOG_HEADER_LENGTH, "x -> y");
-        buffer.putLong(LOG_HEADER_LENGTH + length, 16);
-        buffer.putStringAscii(LOG_HEADER_LENGTH + length + SIZE_OF_LONG, "aeron:udp?endpoint=localhost:9010");
+        buffer.putLong(LOG_HEADER_LENGTH, 16);
+        int length = buffer.putStringAscii(LOG_HEADER_LENGTH + SIZE_OF_LONG, "x -> y");
+        length += buffer.putStringAscii(LOG_HEADER_LENGTH + SIZE_OF_LONG + length, "aeron:udp?endpoint=localhost:9010");
 
         dissectPersistentSubscriptionStateChange(PERSISTENT_SUBSCRIPTION_STATE_CHANGE, buffer, 0, builder);
 
         assertEquals("[1.500000000] " + CONTEXT + ": " + PERSISTENT_SUBSCRIPTION_STATE_CHANGE.name() + " [10/20]:" +
-                " x -> y" +
                 " recordingId=16" +
+                " x -> y" +
                 " replayChannel=aeron:udp?endpoint=localhost:9010",
             builder.toString());
     }
