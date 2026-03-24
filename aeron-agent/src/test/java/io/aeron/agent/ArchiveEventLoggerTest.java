@@ -399,13 +399,16 @@ class ArchiveEventLoggerTest
         final ChronoUnit from = ChronoUnit.CENTURIES;
         final ChronoUnit to = ChronoUnit.MICROS;
         final long recordingId = 555_000_000_000L;
+        final int replayStreamId = 10;
+        final int liveStreamId = 11;
         final String payload = from.name() + STATE_SEPARATOR + to.name();
         final String replayChannel = "aeron:udp?endpoint=localhost:9010";
         final String liveChannel = "aeron:udp?endpoint=localhost:10010";
-        final int captureLength = SIZE_OF_LONG + payload.length() + SIZE_OF_INT + replayChannel.length() + SIZE_OF_INT +
-            liveChannel.length() + SIZE_OF_INT;
+        final int captureLength = SIZE_OF_LONG + SIZE_OF_INT * 2 + payload.length() + SIZE_OF_INT +
+            replayChannel.length() + SIZE_OF_INT + liveChannel.length() + SIZE_OF_INT;
 
-        logger.logPersistentSubscriptionStateChange(from, to, recordingId, replayChannel, liveChannel);
+        logger.logPersistentSubscriptionStateChange(from, to, recordingId, replayStreamId, liveStreamId, replayChannel,
+            liveChannel);
 
         int absoluteOffset = offset + LOG_HEADER_LENGTH;
 
@@ -413,6 +416,10 @@ class ArchiveEventLoggerTest
             logBuffer, offset, PERSISTENT_SUBSCRIPTION_STATE_CHANGE.toEventCodeId(), captureLength, captureLength);
         assertEquals(recordingId, logBuffer.getLong(encodedMsgOffset(absoluteOffset), LITTLE_ENDIAN));
         absoluteOffset += SIZE_OF_LONG;
+        assertEquals(replayStreamId, logBuffer.getInt(encodedMsgOffset(absoluteOffset), LITTLE_ENDIAN));
+        absoluteOffset += SIZE_OF_INT;
+        assertEquals(liveStreamId, logBuffer.getInt(encodedMsgOffset(absoluteOffset), LITTLE_ENDIAN));
+        absoluteOffset += SIZE_OF_INT;
         assertEquals(payload, logBuffer.getStringAscii(encodedMsgOffset(absoluteOffset)));
         absoluteOffset += payload.length() + SIZE_OF_INT;
         assertEquals(replayChannel, logBuffer.getStringAscii(encodedMsgOffset(absoluteOffset)));
