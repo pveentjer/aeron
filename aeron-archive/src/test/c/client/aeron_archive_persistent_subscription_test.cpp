@@ -23,7 +23,6 @@
 #include "gtest/gtest.h"
 #include "../TestArchive.h"
 #include "ArchiveClientTestUtils.h"
-#include "uri/aeron_uri_string_builder.h"
 
 extern "C"
 {
@@ -31,6 +30,7 @@ extern "C"
 #include "client/aeron_archive.h"
 #include "client/aeron_archive_persistent_subscription.h"
 #include "client/aeron_archive_persistent_subscription_internal.h"
+#include "uri/aeron_uri_string_builder.h"
 }
 
 static const std::string IPC_CHANNEL = "aeron:ipc";
