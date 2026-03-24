@@ -183,7 +183,10 @@ public final class ArchiveEventLogger
         final E oldState,
         final E newState,
         final long recordingId,
-        final String replayChannel, final String liveChannel)
+        final int replayStreamId,
+        final int liveStreamId,
+        final String replayChannel,
+        final String liveChannel)
     {
         final int length = persistentSubscriptionStateChangeLength(oldState, newState, replayChannel, liveChannel);
         final int captureLength = captureLength(length);
@@ -203,7 +206,10 @@ public final class ArchiveEventLogger
                     oldState,
                     newState,
                     recordingId,
-                    replayChannel, liveChannel);
+                    replayStreamId,
+                    liveStreamId,
+                    replayChannel,
+                    liveChannel);
             }
             finally
             {

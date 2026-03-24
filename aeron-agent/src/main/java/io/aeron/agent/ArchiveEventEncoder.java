@@ -66,6 +66,8 @@ final class ArchiveEventEncoder
         final E from,
         final E to,
         final long recordingId,
+        final int replayStreamId,
+        final int liveStreamId,
         final String replayChannel,
         final String liveChannel)
     {
@@ -73,6 +75,12 @@ final class ArchiveEventEncoder
 
         encodingBuffer.putLong(offset + encodedLength, recordingId, LITTLE_ENDIAN);
         encodedLength += SIZE_OF_LONG;
+
+        encodingBuffer.putInt(offset + encodedLength, replayStreamId, LITTLE_ENDIAN);
+        encodedLength += SIZE_OF_INT;
+
+        encodingBuffer.putInt(offset + encodedLength, liveStreamId, LITTLE_ENDIAN);
+        encodedLength += SIZE_OF_INT;
 
         encodedLength += encodeStateChange(encodingBuffer, offset + encodedLength, from, to);
         encodedLength += encodeTrailingString(
@@ -91,10 +99,11 @@ final class ArchiveEventEncoder
     static <E extends Enum<E>> int persistentSubscriptionStateChangeLength(
         final E from,
         final E to,
-        final String replayChannel, final String liveChannel)
+        final String replayChannel,
+        final String liveChannel)
     {
-        return stateTransitionStringLength(from, to) + SIZE_OF_LONG +
-            replayChannel.length() + SIZE_OF_INT + liveChannel.length() + SIZE_OF_INT;
+        return stateTransitionStringLength(from, to) + SIZE_OF_LONG + SIZE_OF_INT * 2 + replayChannel.length() +
+            SIZE_OF_INT + liveChannel.length() + SIZE_OF_INT;
     }
 
     static <E extends Enum<E>> int encodeRecordingSessionStateChange(
