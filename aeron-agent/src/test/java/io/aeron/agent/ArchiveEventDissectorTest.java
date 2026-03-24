@@ -973,13 +973,15 @@ class ArchiveEventDissectorTest
         buffer.putLong(LOG_HEADER_LENGTH, 16);
         int length = buffer.putStringAscii(LOG_HEADER_LENGTH + SIZE_OF_LONG, "x -> y");
         length += buffer.putStringAscii(LOG_HEADER_LENGTH + SIZE_OF_LONG + length, "aeron:udp?endpoint=localhost:9010");
+        buffer.putStringAscii(LOG_HEADER_LENGTH + SIZE_OF_LONG + length, "aeron:udp?endpoint=localhost:10010");
 
         dissectPersistentSubscriptionStateChange(PERSISTENT_SUBSCRIPTION_STATE_CHANGE, buffer, 0, builder);
 
         assertEquals("[1.500000000] " + CONTEXT + ": " + PERSISTENT_SUBSCRIPTION_STATE_CHANGE.name() + " [10/20]:" +
                 " recordingId=16" +
                 " x -> y" +
-                " replayChannel=aeron:udp?endpoint=localhost:9010",
+                " replayChannel=aeron:udp?endpoint=localhost:9010" +
+                " liveChannel=aeron:udp?endpoint=localhost:10010",
             builder.toString());
     }
 }
