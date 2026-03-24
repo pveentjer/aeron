@@ -136,9 +136,10 @@ class ArchiveInterceptor
         static <E extends Enum<E>> void logStateChange(
             final E oldState,
             final E newState,
-            final long recordingId)
+            final long recordingId,
+            final String replayChannel)
         {
-            LOGGER.logPersistentSubscriptionStateChange(oldState, newState, recordingId);
+            LOGGER.logPersistentSubscriptionStateChange(oldState, newState, recordingId, replayChannel);
         }
     }
 
