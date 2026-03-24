@@ -14,19 +14,46 @@
  * limitations under the License.
  */
 
+#include <algorithm>
+#include <cinttypes>
+#include <climits>
 #include <random>
 #include <utility>
 
 #include "gtest/gtest.h"
 #include "../TestArchive.h"
 #include "ArchiveClientTestUtils.h"
+#include "uri/aeron_uri_string_builder.h"
 
 extern "C"
 {
 #include "aeron_common.h"
 #include "client/aeron_archive.h"
 #include "client/aeron_archive_persistent_subscription.h"
+#include "client/aeron_archive_persistent_subscription_internal.h"
 }
+
+static const std::string IPC_CHANNEL = "aeron:ipc";
+static const std::string MDC_PUBLICATION_CHANNEL = "aeron:udp?control=localhost:2000|control-mode=dynamic|fc=max";
+static const std::string MDC_SUBSCRIPTION_CHANNEL = "aeron:udp?control=localhost:2000";
+static const std::string UNICAST_CHANNEL = "aeron:udp?endpoint=localhost:2000";
+static const std::string MULTICAST_CHANNEL = "aeron:udp?endpoint=224.0.1.1:40456|interface=localhost";
+static const int32_t STREAM_ID = 1000;
+static const int32_t ONE_KB_MESSAGE_SIZE = 1024 - AERON_DATA_HEADER_LENGTH;
+static const int32_t FLOW_CONTROL_RECEIVERS_COUNTER_TYPE_ID = 17;
+
+struct ListenerState
+{
+    int error_count = 0;
+    int last_errcode = 0;
+    std::string last_error_message;
+};
+
+struct LiveEventListenerState
+{
+    int live_joined_count = 0;
+    int live_left_count = 0;
+};
 
 class MessageCapturingFragmentHandler
 {
@@ -92,6 +119,7 @@ public:
 
         aeron_publication_constants_t constants;
         aeron_exclusive_publication_constants(publication, &constants);
+        m_maxPayloadLength = constants.max_payload_length;
 
         aeron_t *aeron = aeron_archive_context_get_aeron(aeron_archive_get_archive_context(archive));
         aeron_counters_reader_t *counters_reader = aeron_counters_reader(aeron);
@@ -120,11 +148,57 @@ public:
         return m_recordingId;
     }
 
+    int32_t maxPayloadLength() const
+    {
+        return m_maxPayloadLength;
+    }
+
+    int64_t stop()
+    {
+        if (aeron_archive_stop_recording_exclusive_publication(m_archive, m_publication) < 0)
+        {
+            throw std::runtime_error("failed to stop recording " + std::string(aeron_errmsg()));
+        }
+
+        int64_t stop_position = AERON_NULL_VALUE;
+        while (stop_position == AERON_NULL_VALUE)
+        {
+            aeron_archive_get_stop_position(&stop_position, m_archive, m_recordingId);
+            std::this_thread::yield();
+        }
+
+        return stop_position;
+    }
+
+
     void persist(const std::vector<std::vector<uint8_t>>& messages) const
     {
-        offer(messages);
+        if (messages.empty())
+        {
+            return;
+        }
 
-        const auto position = aeron_exclusive_publication_position(m_publication);
+        int64_t position = 0;
+        for (auto& message : messages)
+        {
+            while (true)
+            {
+                position = aeron_exclusive_publication_offer(
+                    m_publication,
+                    message.data(),
+                    message.size(),
+                    nullptr,
+                    nullptr);
+
+                if (position > 0)
+                {
+                    break;
+                }
+
+                std::this_thread::yield();
+            }
+        }
+
         while (*aeron_counters_reader_addr(m_countersReader, m_recPosId) < position)
         {
             std::this_thread::yield();
@@ -133,6 +207,7 @@ public:
 
     void offer(const std::vector<std::vector<uint8_t>>& messages) const
     {
+        int64_t back_pressure_count = 0;
         for (auto& message : messages)
         {
             while (true)
@@ -149,6 +224,16 @@ public:
                     break;
                 }
 
+                // todo: remove me
+                if (result == AERON_PUBLICATION_BACK_PRESSURED)
+                {
+                    if (++back_pressure_count % 1000 == 0)
+                    {
+                        printf("back pressured %" PRId64 " times\n", back_pressure_count);
+                        fflush(stdout);
+                    }
+                }
+
                 if (result == AERON_PUBLICATION_NOT_CONNECTED ||
                     result == AERON_PUBLICATION_CLOSED ||
                     result == AERON_PUBLICATION_MAX_POSITION_EXCEEDED ||
@@ -160,7 +245,26 @@ public:
         }
     }
 
+    int64_t receiverCount() const
+    {
+        aeron_publication_constants_t constants;
+        aeron_exclusive_publication_constants(m_publication, &constants);
+
+        int32_t counter_id = aeron_counters_reader_find_by_type_id_and_registration_id(
+            m_countersReader,
+            FLOW_CONTROL_RECEIVERS_COUNTER_TYPE_ID,
+            constants.registration_id);
+
+        if (counter_id == AERON_NULL_COUNTER_ID)
+        {
+            return -1;
+        }
+
+        return *aeron_counters_reader_addr(m_countersReader, counter_id);
+    }
+
 private:
+    int32_t m_maxPayloadLength;
     aeron_archive_t *m_archive;
     aeron_exclusive_publication_t *m_publication;
     aeron_counters_reader_t *m_countersReader;
@@ -230,6 +334,22 @@ protected:
         return ctx;
     }
 
+    aeron_archive_persistent_subscription_context_t *createDefaultPersistentSubscriptionContext(
+        aeron_t *aeron,
+        aeron_archive_context_t *archiveContext,
+        const int64_t recordingId)
+    {
+        return createPersistentSubscriptionContext(
+            aeron,
+            archiveContext,
+            recordingId,
+            IPC_CHANNEL,
+            STREAM_ID,
+            "aeron:udp?endpoint=localhost:0",
+            -5,
+            0);
+    }
+
     std::vector<std::vector<uint8_t>> generateRandomMessages(const int count)
     {
         std::vector<std::vector<uint8_t>> messages(count);
@@ -245,6 +365,26 @@ protected:
             }
         }
 
+        return messages;
+    }
+
+    std::vector<uint8_t> generateRandomBytes(const int count)
+    {
+        std::vector<uint8_t> bytes(count);
+        for (int i = 0; i < count; i++)
+        {
+            bytes[i] = m_byteGenerator(m_randomEngine);
+        }
+        return bytes;
+    }
+
+    std::vector<std::vector<uint8_t>> generateFixedMessages(const int count, const int size)
+    {
+        std::vector<std::vector<uint8_t>> messages(count);
+        for (int i = 0; i < count; i++)
+        {
+            messages[i] = generateRandomBytes(size);
+        }
         return messages;
     }
 
@@ -287,29 +427,25 @@ private:
     std::uniform_int_distribution<uint8_t> m_byteGenerator = std::uniform_int_distribution<uint8_t>(0, UINT8_MAX);
 };
 
+// Publishes 3 messages to a recording, then starts a persistent subscription.
+// Expects the subscription to first replay all 3 messages from the archive,
+// then transition to live. Once live, 3 further messages are published and
+// the subscription is expected to receive them.
 TEST_F(AeronArchivePersistentSubscriptionTest, shouldReplayAndSwitchToLiveWithNoMessagesBeingPublishedDuringSwitch)
 {
     TestArchive archive = createArchive(m_aeronDir);
 
     const std::vector<std::vector<uint8_t>> messages = generateRandomMessages(3);
 
-    const std::string liveChannel = "aeron:ipc";
-    const int32_t liveStreamId = 1000;
-
-    PersistentPublication persistent_publication(m_aeronDir, liveChannel, liveStreamId);
+    PersistentPublication persistent_publication(m_aeronDir, IPC_CHANNEL, STREAM_ID);
     persistent_publication.persist(messages);
 
     AeronResource aeron(m_aeronDir);
 
-    aeron_archive_persistent_subscription_context_t *context = createPersistentSubscriptionContext(
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
         aeron.aeron(),
         createArchiveContext(),
-        persistent_publication.recordingId(),
-        liveChannel,
-        liveStreamId,
-        "aeron:ipc",
-        2000,
-        0);
+        persistent_publication.recordingId());
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -343,29 +479,29 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldReplayAndSwitchToLiveWithNo
     ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
 }
 
+// Publishes 3 messages to a recording, then starts a persistent subscription
+// configured with AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE, which skips any
+// replay of archived messages. The subscription is expected to become live
+// immediately without receiving the initial 3 messages. Once live, 3 further
+// messages are published and the subscription is expected to receive them.
 TEST_F(AeronArchivePersistentSubscriptionTest, shouldStartFromLiveWithNoInitialReplayIfRequested)
 {
     TestArchive archive = createArchive(m_aeronDir);
 
     const std::vector<std::vector<uint8_t>> messages = generateRandomMessages(3);
 
-    const std::string liveChannel = "aeron:ipc";
-    const int32_t liveStreamId = 1000;
-
-    PersistentPublication persistent_publication(m_aeronDir, liveChannel, liveStreamId);
+    PersistentPublication persistent_publication(m_aeronDir, IPC_CHANNEL, STREAM_ID);
     persistent_publication.persist(messages);
 
     AeronResource aeron(m_aeronDir);
 
-    aeron_archive_persistent_subscription_context_t *context = createPersistentSubscriptionContext(
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
         aeron.aeron(),
         createArchiveContext(),
-        persistent_publication.recordingId(),
-        liveChannel,
-        liveStreamId,
-        "aeron:ipc",
-        2000,
-        AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
+        persistent_publication.recordingId());
+
+    aeron_archive_persistent_subscription_context_set_start_position(
+        context, AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -397,3 +533,1451 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldStartFromLiveWithNoInitialR
 
     ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
 }
+
+// Verifies that a persistent subscription functions correctly when no event listener
+// is registered. A non-existent recording id is used to trigger a failure, confirming
+// that the subscription reaches a failed state without requiring a listener to be set.
+TEST_F(AeronArchivePersistentSubscriptionTest, shouldNotRequireEventListener)
+{
+    TestArchive archive = createArchive(m_aeronDir);
+
+    AeronResource aeron(m_aeronDir);
+
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
+        aeron.aeron(),
+        createArchiveContext(),
+        13); // does not exist
+
+    aeron_archive_persistent_subscription_t *persistent_subscription;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+    executeUntil(
+        "has failed",
+        [&]
+        {
+            return aeron_archive_persistent_subscription_controlled_poll(
+                persistent_subscription,
+                nullptr,
+                nullptr,
+                1);
+        },
+        [&] { return aeron_archive_persistent_subscription_has_failed(persistent_subscription); });
+
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
+}
+
+// Verifies that subscribing to a non-existent recording id causes the subscription
+// to fail and invokes on_error exactly once with an appropriate error message
+TEST_F(AeronArchivePersistentSubscriptionTest, shouldErrorIfRecordingDoesNotExist)
+{
+    TestArchive archive = createArchive(m_aeronDir);
+
+    AeronResource aeron(m_aeronDir);
+
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
+        aeron.aeron(),
+        createArchiveContext(),
+        13); // does not exist
+
+    ListenerState listener_state;
+    aeron_archive_persistent_subscription_listener_t listener = {};
+    listener.clientd = &listener_state;
+    listener.on_error = [](void *clientd, int errcode, const char *message)
+    {
+        auto *state = static_cast<ListenerState *>(clientd);
+        state->error_count++;
+        state->last_errcode = errcode;
+        state->last_error_message = message;
+    };
+    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+
+    aeron_archive_persistent_subscription_t *persistent_subscription;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+    executeUntil(
+        "has failed",
+        [&]
+        {
+            return aeron_archive_persistent_subscription_controlled_poll(
+                persistent_subscription,
+                nullptr,
+                nullptr,
+                1);
+        },
+        [&] { return aeron_archive_persistent_subscription_has_failed(persistent_subscription); });
+
+    ASSERT_EQ(1, listener_state.error_count);
+    ASSERT_NE(std::string::npos, listener_state.last_error_message.find("recording"));
+
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
+}
+
+// Verifies that the stream id of the recording must match the configured live stream id.
+// A recording is created on STREAM_ID, but the persistent subscription is configured
+// with a mismatched live stream id (STREAM_ID + 1). The subscription is expected to
+// fail and invoke on_error exactly once with an appropriate error message.
+TEST_F(AeronArchivePersistentSubscriptionTest, shouldErrorIfRecordingStreamDoesNotMatchLiveStream)
+{
+    TestArchive archive = createArchive(m_aeronDir);
+
+    PersistentPublication persistent_publication(m_aeronDir, IPC_CHANNEL, STREAM_ID);
+
+    AeronResource aeron(m_aeronDir);
+
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
+        aeron.aeron(),
+        createArchiveContext(),
+        persistent_publication.recordingId());
+
+    aeron_archive_persistent_subscription_context_set_live_stream_id(context, STREAM_ID + 1); // <-- mismatched
+
+    ListenerState listener_state;
+    aeron_archive_persistent_subscription_listener_t listener = {};
+    listener.clientd = &listener_state;
+    listener.on_error = [](void *clientd, int errcode, const char *message)
+    {
+        auto *state = static_cast<ListenerState *>(clientd);
+        state->error_count++;
+        state->last_errcode = errcode;
+        state->last_error_message = message;
+    };
+    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+
+    aeron_archive_persistent_subscription_t *persistent_subscription;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+    executeUntil(
+        "has failed",
+        [&]
+        {
+            return aeron_archive_persistent_subscription_controlled_poll(
+                persistent_subscription,
+                nullptr,
+                nullptr,
+                1);
+        },
+        [&] { return aeron_archive_persistent_subscription_has_failed(persistent_subscription); });
+
+    ASSERT_EQ(1, listener_state.error_count);
+    ASSERT_NE(std::string::npos, listener_state.last_error_message.find("stream"));
+
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
+}
+
+// Verifies that a persistent subscription fails if the requested start position is before
+// the recording's start position. The recording is configured with an initial term offset
+// of 1024, giving it a start position of 1024. The persistent subscription is configured
+// with the default start position of 0, which is below the recording start. The subscription
+// is expected to fail and invoke on_error exactly once with an error message containing
+// the word "position".
+TEST_F(AeronArchivePersistentSubscriptionTest, shouldErrorIfStartPositionIsBeforeRecordingStartPosition)
+{
+    TestArchive archive = createArchive(m_aeronDir);
+
+    const std::string channel = "aeron:ipc?init-term-id=0|term-id=0|term-offset=1024|term-length=65536";
+
+    PersistentPublication persistent_publication(m_aeronDir, channel, STREAM_ID);
+
+    AeronResource aeron(m_aeronDir);
+
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
+        aeron.aeron(),
+        createArchiveContext(),
+        persistent_publication.recordingId());
+
+    aeron_archive_persistent_subscription_context_set_live_channel(context, channel.c_str());
+    // start_position is already 0 from default, below recording start of 1024
+
+    ListenerState listener_state;
+    aeron_archive_persistent_subscription_listener_t listener = {};
+    listener.clientd = &listener_state;
+    listener.on_error = [](void *clientd, int errcode, const char *message)
+    {
+        auto *state = static_cast<ListenerState *>(clientd);
+        state->error_count++;
+        state->last_errcode = errcode;
+        state->last_error_message = message;
+    };
+    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+
+    aeron_archive_persistent_subscription_t *persistent_subscription;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+    executeUntil(
+        "has failed",
+        [&]
+        {
+            return aeron_archive_persistent_subscription_controlled_poll(
+                persistent_subscription,
+                nullptr,
+                nullptr,
+                1);
+        },
+        [&] { return aeron_archive_persistent_subscription_has_failed(persistent_subscription); });
+
+    ASSERT_EQ(1, listener_state.error_count);
+    ASSERT_NE(std::string::npos, listener_state.last_error_message.find("position"));
+
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
+}
+
+// Verifies that a persistent subscription cannot be created with a start position
+// that exceeds the recording's stop position. A single message is persisted and
+// the recording is stopped to obtain a known stop position. The subscription is
+// configured with a start position of twice the stop position. The subscription
+// is expected to fail and invoke on_error exactly once with an appropriate error
+// message.
+TEST_F(AeronArchivePersistentSubscriptionTest, shouldErrorIfStartPositionIsAfterStopPosition)
+{
+    TestArchive archive = createArchive(m_aeronDir);
+
+    PersistentPublication persistent_publication(m_aeronDir, IPC_CHANNEL, STREAM_ID);
+
+    const std::vector<uint8_t> message(1024, 0);
+    persistent_publication.persist({{ message }});
+
+    // todo
+    const int64_t stop_position = persistent_publication.stop();
+    ASSERT_GT(stop_position, 0);
+
+    AeronResource aeron(m_aeronDir);
+
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
+        aeron.aeron(),
+        createArchiveContext(),
+        persistent_publication.recordingId());
+
+    aeron_archive_persistent_subscription_context_set_start_position(context, stop_position * 2); // <-- after end
+
+    ListenerState listener_state;
+    aeron_archive_persistent_subscription_listener_t listener = {};
+    listener.clientd = &listener_state;
+    listener.on_error = [](void *clientd, int errcode, const char *message)
+    {
+        auto *state = static_cast<ListenerState *>(clientd);
+        state->error_count++;
+        state->last_errcode = errcode;
+        state->last_error_message = message;
+    };
+    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+
+    aeron_archive_persistent_subscription_t *persistent_subscription;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+    executeUntil(
+        "has failed",
+        [&]
+        {
+            return aeron_archive_persistent_subscription_controlled_poll(
+                persistent_subscription,
+                nullptr,
+                nullptr,
+                1);
+        },
+        [&] { return aeron_archive_persistent_subscription_has_failed(persistent_subscription); });
+
+    ASSERT_EQ(1, listener_state.error_count);
+    ASSERT_NE(std::string::npos, listener_state.last_error_message.find("position"));
+
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
+}
+
+// Verifies that a persistent subscription configured with AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE
+// does not replay messages from the archive. Five messages are persisted before the subscription
+// is created. The subscription becomes live without receiving any of those messages, and on_live_joined
+// is invoked exactly once. Three further messages are then published and the subscription is
+// expected to receive only those.
+TEST_F(AeronArchivePersistentSubscriptionTest, shouldNotReplayOldMessagesWhenStartingFromLive)
+{
+    TestArchive archive = createArchive(m_aeronDir);
+
+    PersistentPublication persistent_publication(m_aeronDir, IPC_CHANNEL, STREAM_ID);
+
+    const std::vector<std::vector<uint8_t>> old_messages = generateRandomMessages(5);
+    persistent_publication.persist(old_messages);
+
+    AeronResource aeron(m_aeronDir);
+
+    int live_joined_count = 0;
+    aeron_archive_persistent_subscription_listener_t listener = {};
+    listener.clientd = &live_joined_count;
+    listener.on_live_joined = [](void *clientd)
+    {
+        (*static_cast<int *>(clientd))++;
+    };
+
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
+        aeron.aeron(),
+        createArchiveContext(),
+        persistent_publication.recordingId());
+
+    aeron_archive_persistent_subscription_context_set_start_position(
+        context, AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
+    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+
+    aeron_archive_persistent_subscription_t *persistent_subscription;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+    MessageCapturingFragmentHandler handler;
+    auto poller = [&]
+    {
+        return aeron_archive_persistent_subscription_controlled_poll(
+            persistent_subscription,
+            MessageCapturingFragmentHandler::onFragment,
+            &handler,
+            10);
+    };
+
+    ASSERT_EQ(0, live_joined_count);
+
+    executeUntil(
+        "becomes live",
+        poller,
+        [&] { return aeron_archive_persistent_subscription_is_live(persistent_subscription); });
+
+    ASSERT_EQ(1, live_joined_count);
+    ASSERT_EQ(0, handler.messageCount());
+
+    const std::vector<std::vector<uint8_t>> new_messages = generateRandomMessages(3);
+    persistent_publication.persist(new_messages);
+
+    executeUntil(
+        "receives all new messages",
+        poller,
+        [&] { return handler.messageCount() >= new_messages.size(); });
+
+    ASSERT_EQ(new_messages, handler.messages());
+
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
+}
+
+// This test verifies that a persistent subscription can catchup from archive and then continues
+// with the live stream.
+// So first a set of messages are written to the archive. And the persistent subscription is expected
+// to process all these messages and switch to live. Then additional set of messages are send and
+// the persistent subscriuption is expected to process these as well.
+TEST_F(AeronArchivePersistentSubscriptionTest, shouldTransitionFromReplayToLiveWhileLiveIsAdvancing)
+{
+    TestArchive archive = createArchive(m_aeronDir);
+
+    PersistentPublication persistent_publication(m_aeronDir, IPC_CHANNEL, STREAM_ID);
+
+    const std::vector<std::vector<uint8_t>> messages = generateRandomMessages(5);
+    persistent_publication.persist(messages);
+
+    AeronResource aeron(m_aeronDir);
+
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
+        aeron.aeron(),
+        createArchiveContext(),
+        persistent_publication.recordingId());
+
+    aeron_archive_persistent_subscription_t *persistent_subscription;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+    MessageCapturingFragmentHandler handler;
+    auto poller = [&]
+    {
+        return aeron_archive_persistent_subscription_controlled_poll(
+            persistent_subscription,
+            MessageCapturingFragmentHandler::onFragment,
+            &handler,
+            10);
+    };
+
+    executeUntil(
+        "receives first message",
+        [&]
+        {
+            return aeron_archive_persistent_subscription_controlled_poll(
+                persistent_subscription,
+                MessageCapturingFragmentHandler::onFragment,
+                &handler,
+                1);
+        },
+        [&] { return handler.messageCount() >= 1; });
+
+    ASSERT_TRUE(aeron_archive_persistent_subscription_is_replaying(persistent_subscription));
+
+    executeUntil(
+        "receives all messages",
+        poller,
+        [&] { return handler.messageCount() >= messages.size(); });
+
+    ASSERT_EQ(messages, handler.messages());
+
+    const std::vector<std::vector<uint8_t>> messages2 = generateRandomMessages(1);
+    persistent_publication.persist(messages2);
+
+    executeUntil(
+        "becomes live",
+        poller,
+        [&] { return aeron_archive_persistent_subscription_is_live(persistent_subscription); });
+
+    ASSERT_FALSE(aeron_archive_persistent_subscription_is_replaying(persistent_subscription));
+
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
+}
+
+// Verifies that a persistent subscription transitions immediately to live when there
+// are no recorded messages to replay. No messages are published before the subscription
+// is created. The subscription is expected to become live without receiving any messages.
+// Five messages are then published and the subscription is expected to receive all of them.
+TEST_F(AeronArchivePersistentSubscriptionTest, shouldStartFromLiveWhenThereIsNoDataToReplay)
+{
+    TestArchive archive = createArchive(m_aeronDir);
+
+    PersistentPublication persistent_publication(m_aeronDir, MDC_PUBLICATION_CHANNEL, STREAM_ID);
+
+    AeronResource aeron(m_aeronDir);
+
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
+        aeron.aeron(),
+        createArchiveContext(),
+        persistent_publication.recordingId());
+
+    aeron_archive_persistent_subscription_context_set_live_channel(context, MDC_SUBSCRIPTION_CHANNEL.c_str());
+
+    aeron_archive_persistent_subscription_t *persistent_subscription;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+    MessageCapturingFragmentHandler handler;
+    auto poller = [&]
+    {
+        return aeron_archive_persistent_subscription_controlled_poll(
+            persistent_subscription,
+            MessageCapturingFragmentHandler::onFragment,
+            &handler,
+            10);
+    };
+
+    executeUntil(
+        "becomes live",
+        poller,
+        [&] { return aeron_archive_persistent_subscription_is_live(persistent_subscription); });
+
+    ASSERT_EQ(0, handler.messageCount());
+
+    const std::vector<std::vector<uint8_t>> messages = generateRandomMessages(5);
+    persistent_publication.persist(messages);
+
+    executeUntil(
+        "receives all messages",
+        poller,
+        [&] { return handler.messageCount() >= messages.size(); });
+
+    ASSERT_EQ(messages, handler.messages());
+
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
+}
+
+// Verifies that fragmented messages are correctly reassembled by the persistent subscription.
+// Two messages are generated, each one byte larger than the maximum payload length, forcing
+// fragmentation. The first message is persisted before the subscription is created and received
+// during replay. The subscription transitions to live, after which the second message is
+// persisted and received on the live stream. Both messages are expected to be fully reassembled
+// and received in order.
+TEST_F(AeronArchivePersistentSubscriptionTest, shouldAssembleMessages)
+{
+    TestArchive archive = createArchive(m_aeronDir);
+
+    PersistentPublication persistent_publication(m_aeronDir, IPC_CHANNEL, STREAM_ID);
+
+    const int32_t size_requiring_fragmentation = persistent_publication.maxPayloadLength() + 1;
+
+    const std::vector<uint8_t> payload0 = generateRandomBytes(size_requiring_fragmentation);
+    const std::vector<uint8_t> payload1 = generateRandomBytes(size_requiring_fragmentation);
+
+    persistent_publication.persist({{ payload0 }});
+
+    AeronResource aeron(m_aeronDir);
+
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
+        aeron.aeron(),
+        createArchiveContext(),
+        persistent_publication.recordingId());
+
+    aeron_archive_persistent_subscription_t *persistent_subscription;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+    MessageCapturingFragmentHandler handler;
+    auto poller = [&]
+    {
+        return aeron_archive_persistent_subscription_controlled_poll(
+            persistent_subscription,
+            MessageCapturingFragmentHandler::onFragment,
+            &handler,
+            1);
+    };
+
+    executeUntil(
+        "becomes live",
+        poller,
+        [&] { return aeron_archive_persistent_subscription_is_live(persistent_subscription); });
+
+    persistent_publication.persist({{ payload1 }});
+
+    executeUntil(
+        "receives both messages",
+        poller,
+        [&] { return handler.messageCount() >= 2; });
+
+    ASSERT_EQ((std::vector<std::vector<uint8_t>>{{ payload0, payload1 }}), handler.messages());
+
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
+}
+
+// Verifies that a persistent subscription configured with AERON_PERSISTENT_SUBSCRIPTION_FROM_START
+// replays from the recording's actual start position. The channel is configured with an initial
+// term offset of 1024, so the recording starts at position 1024 rather than 0. Five messages are
+// persisted before the subscription is created. The subscription is expected to replay all five
+// messages and transition to live. Three further messages are then published and the subscription
+// is expected to receive all eight messages in order.
+TEST_F(AeronArchivePersistentSubscriptionTest, shouldReplayFromRecordingStartPositionWhenStartingFromStart)
+{
+    TestArchive archive = createArchive(m_aeronDir);
+
+    const std::string channel = "aeron:ipc?init-term-id=0|term-id=0|term-offset=1024|term-length=65536";
+
+    PersistentPublication persistent_publication(m_aeronDir, channel, STREAM_ID);
+
+    const std::vector<std::vector<uint8_t>> old_messages = generateRandomMessages(5);
+    persistent_publication.persist(old_messages);
+
+    AeronResource aeron(m_aeronDir);
+
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
+        aeron.aeron(),
+        createArchiveContext(),
+        persistent_publication.recordingId());
+
+    aeron_archive_persistent_subscription_context_set_start_position(
+        context, AERON_PERSISTENT_SUBSCRIPTION_FROM_START);
+
+    aeron_archive_persistent_subscription_t *persistent_subscription;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+    MessageCapturingFragmentHandler handler;
+    auto poller = [&]
+    {
+        return aeron_archive_persistent_subscription_controlled_poll(
+            persistent_subscription,
+            MessageCapturingFragmentHandler::onFragment,
+            &handler,
+            10);
+    };
+
+    executeUntil(
+        "becomes live",
+        poller,
+        [&] { return aeron_archive_persistent_subscription_is_live(persistent_subscription); });
+
+    const std::vector<std::vector<uint8_t>> new_messages = generateRandomMessages(3);
+    persistent_publication.persist(new_messages);
+
+    executeUntil(
+        "receives all messages",
+        poller,
+        [&] { return handler.messageCount() >= old_messages.size() + new_messages.size(); });
+
+    std::vector<std::vector<uint8_t>> all_messages;
+    all_messages.insert(all_messages.end(), old_messages.begin(), old_messages.end());
+    all_messages.insert(all_messages.end(), new_messages.begin(), new_messages.end());
+    ASSERT_EQ(all_messages, handler.messages());
+
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
+}
+
+// A publisher publishes messages on an MDC channel which are recorded by the archive.
+// A persistent subscriber replays the recorded messages and then joins the live stream.
+// Once live, a second fast subscriber (on a separate media driver) joins the same MDC channel.
+// The publisher floods 64 large messages. Only the fast subscriber is polled during
+// this time — the persistent subscriber is not polled and falls behind, causing
+// its live image to be closed.
+// The persistent subscriber drops back to replay to catch up on the missed messages,
+// then rejoins the live stream.
+// All messages must be received exactly once and in order.
+TEST_F(AeronArchivePersistentSubscriptionTest, shouldDropFromLiveBackToReplayThenJoinLiveAgain)
+{
+    TestArchive archive = createArchive(m_aeronDir);
+
+    // Phase 1: publish initial messages and start persistent subscription
+    PersistentPublication persistent_publication(m_aeronDir, MDC_PUBLICATION_CHANNEL, STREAM_ID);
+
+    const std::vector<std::vector<uint8_t>> payloads = generateFixedMessages(5, ONE_KB_MESSAGE_SIZE);
+    persistent_publication.persist(payloads);
+
+    AeronResource aeron(m_aeronDir);
+
+    LiveEventListenerState listener_state;
+    aeron_archive_persistent_subscription_listener_t listener = {};
+    listener.clientd = &listener_state;
+    listener.on_live_joined = [](void *clientd)
+    {
+        static_cast<LiveEventListenerState *>(clientd)->live_joined_count++;
+    };
+    listener.on_live_left = [](void *clientd)
+    {
+        static_cast<LiveEventListenerState *>(clientd)->live_left_count++;
+    };
+
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
+        aeron.aeron(),
+        createArchiveContext(),
+        persistent_publication.recordingId());
+
+    aeron_archive_persistent_subscription_context_set_live_channel(context, MDC_SUBSCRIPTION_CHANNEL.c_str());
+    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+
+    aeron_archive_persistent_subscription_t *persistent_subscription;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+    MessageCapturingFragmentHandler handler;
+    auto poller = [&]
+    {
+        return aeron_archive_persistent_subscription_controlled_poll(
+            persistent_subscription,
+            MessageCapturingFragmentHandler::onFragment,
+            &handler,
+            10);
+    };
+
+    ASSERT_EQ(0, listener_state.live_joined_count);
+
+    // Phase 2: replay recorded messages
+    executeUntil(
+        "receives first message",
+        [&]
+        {
+            return aeron_archive_persistent_subscription_controlled_poll(
+                persistent_subscription,
+                MessageCapturingFragmentHandler::onFragment,
+                &handler,
+                1);
+        },
+        [&] { return handler.messageCount() >= 1; });
+
+    ASSERT_TRUE(aeron_archive_persistent_subscription_is_replaying(persistent_subscription));
+
+    executeUntil(
+        "receives all payloads",
+        poller,
+        [&] { return handler.messageCount() >= payloads.size(); });
+
+    // Phase 3: join live
+    executeUntil(
+        "becomes live",
+        poller,
+        [&] { return aeron_archive_persistent_subscription_is_live(persistent_subscription); });
+
+    ASSERT_EQ(1, listener_state.live_joined_count);
+    ASSERT_EQ(0, listener_state.live_left_count);
+    ASSERT_EQ(payloads.size(), handler.messageCount());
+
+    // Phase 4: consume more messages while live
+    const std::vector<std::vector<uint8_t>> payloads2 = generateFixedMessages(5, ONE_KB_MESSAGE_SIZE);
+    persistent_publication.persist(payloads2);
+
+    executeUntil(
+        "receives payloads2",
+        poller,
+        [&] { return handler.messageCount() >= payloads.size() + payloads2.size(); });
+
+    ASSERT_TRUE(aeron_archive_persistent_subscription_is_live(persistent_subscription));
+
+    // Phase 5: introduce a fast subscription on a separate media driver to cause the persistent subscription to fall behind.
+    // Note: Java launches a bare MediaDriver here. In C we have no standalone media driver launcher,
+    // so we launch a second TestArchive purely for its media driver — the archive part is unused. Ugly hack.
+    {
+        TestArchive archive2(
+            m_aeronDir + "-2",
+            std::string(ARCHIVE_DIR) + "-2",
+            std::cout,
+            "aeron:udp?endpoint=localhost:8011",
+            "aeron:udp?endpoint=localhost:0",
+            2);
+        AeronResource aeron2(m_aeronDir + "-2");
+
+        aeron_subscription_t *fast_subscription = nullptr;
+        aeron_async_add_subscription_t *async_add = nullptr;
+        ASSERT_EQ(0, aeron_async_add_subscription(
+            &async_add,
+            aeron2.aeron(),
+            MDC_SUBSCRIPTION_CHANNEL.c_str(),
+            STREAM_ID,
+            nullptr, nullptr, nullptr, nullptr)) << aeron_errmsg();
+
+        while (fast_subscription == nullptr)
+        {
+            aeron_async_add_subscription_poll(&fast_subscription, async_add);
+            std::this_thread::yield();
+        }
+
+        while (aeron_subscription_image_count(fast_subscription) == 0)
+        {
+            std::this_thread::yield();
+        }
+
+        const std::vector<std::vector<uint8_t>> payloads3 = generateFixedMessages(64, ONE_KB_MESSAGE_SIZE);
+        persistent_publication.offer(payloads3);
+
+        size_t fast_count = 0;
+        executeUntil(
+            "fast subscription receives 64 messages",
+            [&]
+            {
+                return aeron_subscription_poll(
+                    fast_subscription,
+                    [](void *clientd, const uint8_t *, size_t, aeron_header_t *)
+                    {
+                        (*static_cast<size_t *>(clientd))++;
+                    },
+                    &fast_count,
+                    1);
+            },
+            [&] { return fast_count >= 64; });
+
+        // Phase 6: persistent subscription drops back to replay
+        executeUntil(
+            "drops to replaying",
+            poller,
+            [&] { return aeron_archive_persistent_subscription_is_replaying(persistent_subscription); });
+
+        ASSERT_TRUE(aeron_archive_persistent_subscription_is_replaying(persistent_subscription));
+        ASSERT_EQ(1, listener_state.live_left_count);
+
+        // Phase 7: recover - persistent subscription catches up via replay and rejoins live
+        const std::vector<std::vector<uint8_t>> payloads4 = generateFixedMessages(5, ONE_KB_MESSAGE_SIZE);
+        persistent_publication.persist(payloads4);
+
+        const size_t expected_count =
+            payloads.size() + payloads2.size() + payloads3.size() + payloads4.size();
+
+        executeUntil(
+            "receives all messages and becomes live",
+            poller,
+            [&]
+            {
+                return handler.messageCount() >= expected_count &&
+                       aeron_archive_persistent_subscription_is_live(persistent_subscription);
+            });
+
+        ASSERT_EQ(2, listener_state.live_joined_count);
+
+        std::vector<std::vector<uint8_t>> all_messages;
+        all_messages.insert(all_messages.end(), payloads.begin(), payloads.end());
+        all_messages.insert(all_messages.end(), payloads2.begin(), payloads2.end());
+        all_messages.insert(all_messages.end(), payloads3.begin(), payloads3.end());
+        all_messages.insert(all_messages.end(), payloads4.begin(), payloads4.end());
+        ASSERT_EQ(all_messages, handler.messages());
+
+        aeron_subscription_close(fast_subscription, nullptr, nullptr);
+    }
+
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
+}
+
+// Verifies that an untethered persistent subscription can fall behind a tethered subscription
+// without blocking it. An untethered persistent subscription and a tethered subscription are
+// created on the same channel. Once the persistent subscription becomes live, 64 messages of
+// 1KB each are published, filling the 64KB term buffer. Only the tethered subscription is
+// polled during this time, causing the publisher to advance past the untethered persistent
+// subscription's image, which is then closed by the media driver. The persistent subscription
+// drops back to replay to catch up on all 64 messages and then transitions back to live.
+TEST_F(AeronArchivePersistentSubscriptionTest, anUntetheredPersistentSubscriptionCanFallBehindATetheredSubscription)
+{
+    TestArchive archive = createArchive(m_aeronDir);
+
+    PersistentPublication persistent_publication(m_aeronDir, UNICAST_CHANNEL, STREAM_ID);
+
+    AeronResource aeron(m_aeronDir);
+
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
+        aeron.aeron(),
+        createArchiveContext(),
+        persistent_publication.recordingId());
+
+    aeron_archive_persistent_subscription_context_set_live_channel(
+        context, (UNICAST_CHANNEL + "|tether=false").c_str());
+
+    aeron_archive_persistent_subscription_t *persistent_subscription;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+    aeron_subscription_t *tethered_subscription = nullptr;
+    aeron_async_add_subscription_t *async_add = nullptr;
+    ASSERT_EQ(0, aeron_async_add_subscription(
+        &async_add,
+        aeron.aeron(),
+        (UNICAST_CHANNEL + "|tether=true").c_str(),
+        STREAM_ID,
+        nullptr, nullptr, nullptr, nullptr)) << aeron_errmsg();
+
+    while (tethered_subscription == nullptr)
+    {
+        aeron_async_add_subscription_poll(&tethered_subscription, async_add);
+        std::this_thread::yield();
+    }
+
+    while (aeron_subscription_image_count(tethered_subscription) == 0)
+    {
+        std::this_thread::yield();
+    }
+
+    MessageCapturingFragmentHandler handler;
+    auto poller = [&]
+    {
+        return aeron_archive_persistent_subscription_controlled_poll(
+            persistent_subscription,
+            MessageCapturingFragmentHandler::onFragment,
+            &handler,
+            10);
+    };
+
+    executeUntil(
+        "becomes live",
+        poller,
+        [&] { return aeron_archive_persistent_subscription_is_live(persistent_subscription); });
+
+    // the term buffer is 64 KB
+    const std::vector<std::vector<uint8_t>> payloads = generateFixedMessages(64, ONE_KB_MESSAGE_SIZE);
+    persistent_publication.persist(payloads);
+
+    size_t fast_count = 0;
+    executeUntil(
+        "tethered subscription receives 64 messages",
+        [&]
+        {
+            return aeron_subscription_poll(
+                tethered_subscription,
+                [](void *clientd, const uint8_t *, size_t, aeron_header_t *)
+                {
+                    (*static_cast<size_t *>(clientd))++;
+                },
+                &fast_count,
+                10);
+        },
+        [&] { return fast_count >= 64; });
+
+    aeron_image_t *image = aeron_subscription_image_at_index(tethered_subscription, 0);
+    printf("tethered_rcv_pos=%" PRId64 "\n", aeron_image_position(image));
+    fflush(stdout);
+
+    executeUntil(
+        "persistent subscription receives 64 messages",
+        [&]
+        {
+            return aeron_archive_persistent_subscription_controlled_poll(
+                persistent_subscription,
+                MessageCapturingFragmentHandler::onFragment,
+                &handler,
+                1);
+        },
+        [&] { return handler.messageCount() >= 64; });
+
+    ASSERT_TRUE(aeron_archive_persistent_subscription_is_replaying(persistent_subscription));
+
+    executeUntil(
+        "becomes live again",
+        [&]
+        {
+            return aeron_archive_persistent_subscription_controlled_poll(
+                persistent_subscription,
+                MessageCapturingFragmentHandler::onFragment,
+                &handler,
+                1);
+        },
+        [&] { return aeron_archive_persistent_subscription_is_live(persistent_subscription); });
+
+    aeron_subscription_close(tethered_subscription, nullptr, nullptr);
+
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
+}
+
+TEST_F(AeronArchivePersistentSubscriptionTest, aTetheredPersistentSubscriptionDoesNotFallBehindAnUntetheredSubscription)
+{
+    TestArchive archive = createArchive(m_aeronDir);
+
+    PersistentPublication persistent_publication(m_aeronDir, UNICAST_CHANNEL, STREAM_ID);
+
+    AeronResource aeron(m_aeronDir);
+
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
+        aeron.aeron(),
+        createArchiveContext(),
+        persistent_publication.recordingId());
+
+    aeron_archive_persistent_subscription_context_set_live_channel(
+        context, (UNICAST_CHANNEL + "|tether=true").c_str());
+
+    aeron_archive_persistent_subscription_t *persistent_subscription;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+    aeron_subscription_t *untethered_subscription = nullptr;
+    aeron_async_add_subscription_t *async_add = nullptr;
+    ASSERT_EQ(0, aeron_async_add_subscription(
+        &async_add,
+        aeron.aeron(),
+        (UNICAST_CHANNEL + "|tether=false").c_str(),
+        STREAM_ID,
+        nullptr, nullptr, nullptr, nullptr)) << aeron_errmsg();
+
+    while (untethered_subscription == nullptr)
+    {
+        aeron_async_add_subscription_poll(&untethered_subscription, async_add);
+        std::this_thread::yield();
+    }
+
+    while (aeron_subscription_image_count(untethered_subscription) == 0)
+    {
+        std::this_thread::yield();
+    }
+
+    MessageCapturingFragmentHandler handler;
+    auto poller = [&]
+    {
+        return aeron_archive_persistent_subscription_controlled_poll(
+            persistent_subscription,
+            MessageCapturingFragmentHandler::onFragment,
+            &handler,
+            10);
+    };
+
+    executeUntil(
+        "becomes live",
+        poller,
+        [&] { return aeron_archive_persistent_subscription_is_live(persistent_subscription); });
+
+    const std::vector<std::vector<uint8_t>> payloads = generateFixedMessages(64, ONE_KB_MESSAGE_SIZE);
+    persistent_publication.persist(payloads);
+
+    executeUntil(
+        "receives 64 messages",
+        [&]
+        {
+            return aeron_archive_persistent_subscription_controlled_poll(
+                persistent_subscription,
+                MessageCapturingFragmentHandler::onFragment,
+                &handler,
+                1);
+        },
+        [&] { return handler.messageCount() >= 64; });
+
+    ASSERT_TRUE(aeron_archive_persistent_subscription_is_live(persistent_subscription));
+
+    while (aeron_subscription_is_connected(untethered_subscription))
+    {
+        std::this_thread::yield();
+    }
+
+    aeron_subscription_close(untethered_subscription, nullptr, nullptr);
+
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
+}
+
+struct FragmentLimitAndChannel
+{
+    int fragment_limit;
+    std::string channel;
+};
+
+class AeronArchivePersistentSubscriptionReplayAndJoinLiveTest
+    : public AeronArchivePersistentSubscriptionTest,
+      public testing::WithParamInterface<FragmentLimitAndChannel>
+{
+};
+
+INSTANTIATE_TEST_SUITE_P(
+    ,
+    AeronArchivePersistentSubscriptionReplayAndJoinLiveTest,
+    testing::Values(
+        FragmentLimitAndChannel{1, IPC_CHANNEL},
+        FragmentLimitAndChannel{10, IPC_CHANNEL},
+        FragmentLimitAndChannel{INT_MAX, IPC_CHANNEL},
+        FragmentLimitAndChannel{1, MULTICAST_CHANNEL},
+        FragmentLimitAndChannel{10, MULTICAST_CHANNEL},
+        FragmentLimitAndChannel{INT_MAX, MULTICAST_CHANNEL}));
+
+// Verifies that a persistent subscription replays an existing recording and then transitions
+// to live. Five messages are persisted before the subscription is created. The subscription
+// is confirmed to be replaying after receiving the first message. Once all five messages are
+// received, the subscription transitions to live and on_live_joined is invoked exactly once.
+// Five further messages are then published and the subscription is expected to receive all
+// ten messages in order.
+TEST_P(AeronArchivePersistentSubscriptionReplayAndJoinLiveTest, shouldReplayExistingRecordingThenJoinLive)
+{
+    TestArchive archive = createArchive(m_aeronDir);
+
+    const int fragment_limit = GetParam().fragment_limit;
+    const std::string& channel = GetParam().channel;
+
+    PersistentPublication persistent_publication(m_aeronDir, channel, STREAM_ID);
+
+    const std::vector<std::vector<uint8_t>> payloads = generateRandomMessages(5);
+    persistent_publication.persist(payloads);
+
+    AeronResource aeron(m_aeronDir);
+
+    int live_joined_count = 0;
+    aeron_archive_persistent_subscription_listener_t listener = {};
+    listener.clientd = &live_joined_count;
+    listener.on_live_joined = [](void *clientd)
+    {
+        (*static_cast<int *>(clientd))++;
+    };
+
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
+        aeron.aeron(),
+        createArchiveContext(),
+        persistent_publication.recordingId());
+
+    aeron_archive_persistent_subscription_context_set_live_channel(context, channel.c_str());
+    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+
+    aeron_archive_persistent_subscription_t *persistent_subscription;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+    MessageCapturingFragmentHandler handler;
+    auto poller = [&]
+    {
+        return aeron_archive_persistent_subscription_controlled_poll(
+            persistent_subscription,
+            MessageCapturingFragmentHandler::onFragment,
+            &handler,
+            fragment_limit);
+    };
+
+    ASSERT_EQ(0, live_joined_count);
+
+    executeUntil(
+        "receives first message",
+        [&]
+        {
+            return aeron_archive_persistent_subscription_controlled_poll(
+                persistent_subscription,
+                MessageCapturingFragmentHandler::onFragment,
+                &handler,
+                1);
+        },
+        [&] { return handler.messageCount() >= 1; });
+
+    ASSERT_TRUE(aeron_archive_persistent_subscription_is_replaying(persistent_subscription));
+
+    executeUntil(
+        "receives all payloads",
+        poller,
+        [&] { return handler.messageCount() >= payloads.size(); });
+
+    ASSERT_EQ(payloads, handler.messages());
+
+    executeUntil(
+        "becomes live",
+        poller,
+        [&] { return aeron_archive_persistent_subscription_is_live(persistent_subscription); });
+
+    ASSERT_EQ(1, live_joined_count);
+    ASSERT_EQ(payloads.size(), handler.messageCount());
+
+    const std::vector<std::vector<uint8_t>> payloads2 = generateRandomMessages(5);
+    persistent_publication.persist(payloads2);
+
+    executeUntil(
+        "receives all live messages",
+        poller,
+        [&] { return handler.messageCount() >= payloads.size() + payloads2.size(); });
+
+    ASSERT_TRUE(aeron_archive_persistent_subscription_is_live(persistent_subscription));
+    ASSERT_FALSE(aeron_archive_persistent_subscription_is_replaying(persistent_subscription));
+
+    std::vector<std::vector<uint8_t>> all_messages;
+    all_messages.insert(all_messages.end(), payloads.begin(), payloads.end());
+    all_messages.insert(all_messages.end(), payloads2.begin(), payloads2.end());
+    ASSERT_EQ(all_messages, handler.messages());
+
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
+}
+
+struct ReplayChannelAndStream
+{
+    std::string replay_channel;
+    int32_t replay_stream_id;
+};
+
+class AeronArchivePersistentSubscriptionReplayOverConfiguredChannelTest
+    : public AeronArchivePersistentSubscriptionTest,
+      public testing::WithParamInterface<ReplayChannelAndStream>
+{
+};
+
+INSTANTIATE_TEST_SUITE_P(
+    ,
+    AeronArchivePersistentSubscriptionReplayOverConfiguredChannelTest,
+    testing::Values(
+        ReplayChannelAndStream{"aeron:udp?endpoint=localhost:0", -10},
+        ReplayChannelAndStream{"aeron:udp?endpoint=localhost:10001", -11},
+        ReplayChannelAndStream{"aeron:ipc", -12}));
+
+TEST_P(AeronArchivePersistentSubscriptionReplayOverConfiguredChannelTest, shouldReplayOverConfiguredChannel)
+{
+    TestArchive archive = createArchive(m_aeronDir);
+
+    const std::string& replay_channel = GetParam().replay_channel;
+    const int32_t replay_stream_id = GetParam().replay_stream_id;
+
+    PersistentPublication persistent_publication(m_aeronDir, IPC_CHANNEL, STREAM_ID);
+
+    const std::vector<std::vector<uint8_t>> payloads = generateRandomMessages(5);
+    persistent_publication.persist(payloads);
+
+    AeronResource aeron(m_aeronDir);
+
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
+        aeron.aeron(),
+        createArchiveContext(),
+        persistent_publication.recordingId());
+
+    aeron_archive_persistent_subscription_context_set_replay_channel(context, replay_channel.c_str());
+    aeron_archive_persistent_subscription_context_set_replay_stream_id(context, replay_stream_id);
+
+    aeron_archive_persistent_subscription_t *persistent_subscription;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+    MessageCapturingFragmentHandler handler;
+
+    executeUntil(
+        "receives first message",
+        [&]
+        {
+            return aeron_archive_persistent_subscription_controlled_poll(
+                persistent_subscription,
+                MessageCapturingFragmentHandler::onFragment,
+                &handler,
+                1);
+        },
+        [&] { return handler.messageCount() >= 1; });
+
+    ASSERT_TRUE(aeron_archive_persistent_subscription_is_replaying(persistent_subscription));
+
+    executeUntil(
+        "becomes live",
+        [&]
+        {
+            return aeron_archive_persistent_subscription_controlled_poll(
+                persistent_subscription,
+                MessageCapturingFragmentHandler::onFragment,
+                &handler,
+                10);
+        },
+        [&] { return aeron_archive_persistent_subscription_is_live(persistent_subscription); });
+
+    ASSERT_EQ(payloads, handler.messages());
+
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
+}
+
+static const std::string SPY_PREFIX = "aeron-spy:";
+
+class AeronArchivePersistentSubscriptionSpyOnLiveTest
+    : public AeronArchivePersistentSubscriptionTest,
+      public testing::WithParamInterface<int>
+{
+};
+
+INSTANTIATE_TEST_SUITE_P(
+    ,
+    AeronArchivePersistentSubscriptionSpyOnLiveTest,
+    testing::Values(1, 10));
+
+TEST_P(AeronArchivePersistentSubscriptionSpyOnLiveTest, shouldReplayExistingRecordingThenSpyOnLive)
+{
+    TestArchive archive = createArchive(m_aeronDir);
+
+    const int fragment_limit = GetParam();
+
+    PersistentPublication persistent_publication(m_aeronDir, MDC_PUBLICATION_CHANNEL, STREAM_ID);
+
+    const std::vector<std::vector<uint8_t>> payloads = generateFixedMessages(8, ONE_KB_MESSAGE_SIZE);
+    persistent_publication.persist(payloads);
+
+    AeronResource aeron(m_aeronDir);
+
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
+        aeron.aeron(),
+        createArchiveContext(),
+        persistent_publication.recordingId());
+
+    aeron_archive_persistent_subscription_context_set_live_channel(
+        context, (SPY_PREFIX + "aeron:udp?control=localhost:2000").c_str());
+
+    aeron_archive_persistent_subscription_t *persistent_subscription;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+    MessageCapturingFragmentHandler handler;
+    auto poller = [&]
+    {
+        return aeron_archive_persistent_subscription_controlled_poll(
+            persistent_subscription,
+            MessageCapturingFragmentHandler::onFragment,
+            &handler,
+            fragment_limit);
+    };
+
+    executeUntil(
+        "receives first 8 messages",
+        [&]
+        {
+            return aeron_archive_persistent_subscription_controlled_poll(
+                persistent_subscription,
+                MessageCapturingFragmentHandler::onFragment,
+                &handler,
+                1);
+        },
+        [&] { return handler.messageCount() >= 8; });
+
+    ASSERT_TRUE(aeron_archive_persistent_subscription_is_replaying(persistent_subscription));
+
+    executeUntil(
+        "receives all payloads",
+        poller,
+        [&] { return handler.messageCount() >= payloads.size(); });
+
+    ASSERT_EQ(payloads, handler.messages());
+
+    executeUntil(
+        "becomes live",
+        poller,
+        [&] { return aeron_archive_persistent_subscription_is_live(persistent_subscription); });
+
+    ASSERT_EQ(payloads.size(), handler.messageCount());
+
+    const std::vector<std::vector<uint8_t>> payloads2 = generateFixedMessages(16, ONE_KB_MESSAGE_SIZE);
+    persistent_publication.persist(payloads2);
+
+    executeUntil(
+        "receives all live messages",
+        poller,
+        [&]
+        {
+            return handler.messageCount() >= payloads.size() + payloads2.size() &&
+                   aeron_archive_persistent_subscription_is_live(persistent_subscription);
+        });
+
+    ASSERT_TRUE(aeron_archive_persistent_subscription_is_live(persistent_subscription));
+    ASSERT_FALSE(aeron_archive_persistent_subscription_is_replaying(persistent_subscription));
+
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
+}
+
+class AeronArchivePersistentSubscriptionCatchupTest
+    : public AeronArchivePersistentSubscriptionTest,
+      public testing::WithParamInterface<int>
+{
+};
+
+INSTANTIATE_TEST_SUITE_P(
+    ,
+    AeronArchivePersistentSubscriptionCatchupTest,
+    testing::Values(1, 10));
+
+// Verifies that a persistent subscription catches up on replay before transitioning to live.
+// Five messages are persisted before the subscription is created. The subscription is confirmed
+// to be replaying after receiving the first message. While still replaying, 25 further messages
+// are persisted. The subscription is expected to catch up on all 30 messages before transitioning
+// to live, with on_live_joined invoked exactly once. Five more messages are then published and
+// the subscription is expected to receive all 35 messages in order. The test is parameterised
+// over fragment limit.
+TEST_P(AeronArchivePersistentSubscriptionCatchupTest, shouldCatchupOnReplayBeforeSwitchingToLive)
+{
+    TestArchive archive = createArchive(m_aeronDir);
+
+    const int fragment_limit = GetParam();
+
+    PersistentPublication persistent_publication(m_aeronDir, IPC_CHANNEL, STREAM_ID);
+
+    const std::vector<std::vector<uint8_t>> payloads = generateRandomMessages(5);
+    persistent_publication.persist(payloads);
+
+    AeronResource aeron(m_aeronDir);
+
+    int live_joined_count = 0;
+    aeron_archive_persistent_subscription_listener_t listener = {};
+    listener.clientd = &live_joined_count;
+    listener.on_live_joined = [](void *clientd)
+    {
+        (*static_cast<int *>(clientd))++;
+    };
+
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
+        aeron.aeron(),
+        createArchiveContext(),
+        persistent_publication.recordingId());
+
+    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+
+    aeron_archive_persistent_subscription_t *persistent_subscription;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+    MessageCapturingFragmentHandler handler;
+    auto poller = [&]
+    {
+        return aeron_archive_persistent_subscription_controlled_poll(
+            persistent_subscription,
+            MessageCapturingFragmentHandler::onFragment,
+            &handler,
+            fragment_limit);
+    };
+
+    executeUntil(
+        "receives first message",
+        [&]
+        {
+            return aeron_archive_persistent_subscription_controlled_poll(
+                persistent_subscription,
+                MessageCapturingFragmentHandler::onFragment,
+                &handler,
+                1);
+        },
+        [&] { return handler.messageCount() >= 1; });
+
+    ASSERT_TRUE(aeron_archive_persistent_subscription_is_replaying(persistent_subscription));
+
+    const std::vector<std::vector<uint8_t>> payloads2 = generateRandomMessages(25);
+    persistent_publication.persist(payloads2);
+
+    executeUntil(
+        "receives all payloads and payloads2",
+        poller,
+        [&] { return handler.messageCount() >= payloads.size() + payloads2.size(); });
+
+    executeUntil(
+        "becomes live",
+        poller,
+        [&] { return aeron_archive_persistent_subscription_is_live(persistent_subscription); });
+
+    ASSERT_EQ(1, live_joined_count);
+    ASSERT_EQ(payloads.size() + payloads2.size(), handler.messageCount());
+
+    const std::vector<std::vector<uint8_t>> payloads3 = generateRandomMessages(5);
+    persistent_publication.persist(payloads3);
+
+    executeUntil(
+        "receives all live messages",
+        poller,
+        [&]
+        {
+            return handler.messageCount() >= payloads.size() + payloads2.size() + payloads3.size() &&
+                   aeron_archive_persistent_subscription_is_live(persistent_subscription);
+        });
+
+    ASSERT_TRUE(aeron_archive_persistent_subscription_is_live(persistent_subscription));
+    ASSERT_FALSE(aeron_archive_persistent_subscription_is_replaying(persistent_subscription));
+
+    std::vector<std::vector<uint8_t>> all_messages;
+    all_messages.insert(all_messages.end(), payloads.begin(), payloads.end());
+    all_messages.insert(all_messages.end(), payloads2.begin(), payloads2.end());
+    all_messages.insert(all_messages.end(), payloads3.begin(), payloads3.end());
+    ASSERT_EQ(all_messages, handler.messages());
+
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
+}
+
+
+TEST_F(AeronArchivePersistentSubscriptionTest, shouldHandleReplayBeingAheadOfLive)
+{
+    TestArchive archive = createArchive(m_aeronDir);
+
+    const std::string pub_channel = "aeron:udp?control=localhost:2000|control-mode=dynamic|fc=min";
+    const std::string sub_channel = "aeron:udp?control=localhost:2000|rcv-wnd=4k";
+
+    PersistentPublication persistent_publication(m_aeronDir, pub_channel, STREAM_ID);
+
+    // Phase 1: create a slow subscription on a separate media driver with a limited receive window.
+    // Note: Java launches a bare MediaDriver here. In C we launch a second TestArchive purely
+    // for its media driver — the archive part is unused. Ugly hack.
+    TestArchive archive2(
+        m_aeronDir + "-2",
+        std::string(ARCHIVE_DIR) + "-2",
+        std::cout,
+        "aeron:udp?endpoint=localhost:8011",
+        "aeron:udp?endpoint=localhost:0",
+        2);
+    AeronResource aeron2(m_aeronDir + "-2");
+
+    aeron_subscription_t *slow_subscription = nullptr;
+    aeron_async_add_subscription_t *async_add = nullptr;
+    ASSERT_EQ(0, aeron_async_add_subscription(
+        &async_add,
+        aeron2.aeron(),
+        sub_channel.c_str(),
+        STREAM_ID,
+        nullptr, nullptr, nullptr, nullptr)) << aeron_errmsg();
+
+    while (slow_subscription == nullptr)
+    {
+        aeron_async_add_subscription_poll(&slow_subscription, async_add);
+        std::this_thread::yield();
+    }
+
+    while (aeron_subscription_image_count(slow_subscription) == 0)
+    {
+        std::this_thread::yield();
+    }
+
+    // Phase 2: publish 32 large messages and persist
+    persistent_publication.persist(generateFixedMessages(32, ONE_KB_MESSAGE_SIZE));
+
+    AeronResource aeron(m_aeronDir);
+
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
+        aeron.aeron(),
+        createArchiveContext(),
+        persistent_publication.recordingId());
+
+    aeron_archive_persistent_subscription_context_set_live_channel(context, sub_channel.c_str());
+
+    aeron_archive_persistent_subscription_t *persistent_subscription;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+    MessageCapturingFragmentHandler handler;
+    auto poller = [&]
+    {
+        return aeron_archive_persistent_subscription_controlled_poll(
+            persistent_subscription,
+            MessageCapturingFragmentHandler::onFragment,
+            &handler,
+            10);
+    };
+
+    // Phase 3: replay 32 messages
+    executeUntil(
+        "receives 32 messages",
+        poller,
+        [&] { return handler.messageCount() >= 32; });
+
+    // Phase 4: wait for 2 receivers (persistent subscription's live sub + slow subscription)
+    executeUntil(
+        "2 receivers connected",
+        poller,
+        [&] { return persistent_publication.receiverCount() == 2; });
+
+    // Phase 5: switch to live, polling both subscriptions concurrently
+    executeUntil(
+        "becomes live",
+        [&]
+        {
+            int work = poller();
+            work += aeron_subscription_poll(
+                slow_subscription,
+                [](void *, const uint8_t *, size_t, aeron_header_t *) {},
+                nullptr,
+                10);
+            return work;
+        },
+        [&] { return aeron_archive_persistent_subscription_is_live(persistent_subscription); });
+
+    ASSERT_EQ(-28 * 1024L, aeron_archive_persistent_subscription_join_error(persistent_subscription));
+
+    aeron_subscription_close(slow_subscription, nullptr, nullptr);
+
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
+}
+
