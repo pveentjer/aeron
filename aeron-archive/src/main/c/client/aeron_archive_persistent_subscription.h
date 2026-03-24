@@ -25,6 +25,15 @@
 typedef struct aeron_archive_persistent_subscription_context_stct aeron_archive_persistent_subscription_context_t;
 typedef struct aeron_archive_persistent_subscription_stct aeron_archive_persistent_subscription_t;
 
+typedef struct aeron_archive_persistent_subscription_listener_stct
+{
+    void (*on_live_joined)(void *clientd);
+    void (*on_live_left)(void *clientd);
+    void (*on_error)(void *clientd, int errcode, const char *message);
+    void *clientd;
+}
+aeron_archive_persistent_subscription_listener_t;
+
 /**
  * Create and initialize a persistent subscription context.
  *
@@ -35,6 +44,9 @@ int aeron_archive_persistent_subscription_context_init(aeron_archive_persistent_
 
 /**
  * Close and dispose of all resources held by the persistent subscription context.
+ * <p>
+ * If the context created its own Aeron client (i.e. none was set via
+ * aeron_archive_persistent_subscription_context_set_aeron), that client will be closed here.
  *
  * @param context to close.
  * @return 0 on success, -1 on error.
@@ -43,6 +55,10 @@ int aeron_archive_persistent_subscription_context_close(aeron_archive_persistent
 
 /**
  * Set the Aeron client that will be used by the persistent subscription.
+ * <p>
+ * If not set, the persistent subscription will create and own its own Aeron client when
+ * aeron_archive_persistent_subscription_create is called. In that case, the client will be
+ * closed when the context is closed via aeron_archive_persistent_subscription_context_close.
  *
  * @param context to configure.
  * @param aeron the Aeron client to use.
@@ -51,6 +67,20 @@ int aeron_archive_persistent_subscription_context_close(aeron_archive_persistent
 int aeron_archive_persistent_subscription_context_set_aeron(
     aeron_archive_persistent_subscription_context_t *context,
     aeron_t *aeron);
+
+/**
+ * Set the Aeron directory name to use when the persistent subscription creates its own Aeron client.
+ * Has no effect if an Aeron client is set via aeron_archive_persistent_subscription_context_set_aeron.
+ * <p>
+ * The directory name is copied into the context. The caller retains ownership of the supplied string.
+ *
+ * @param context to configure.
+ * @param aeron_directory_name the Aeron directory name.
+ * @return 0 on success, -1 on error.
+ */
+int aeron_archive_persistent_subscription_context_set_aeron_directory_name(
+    aeron_archive_persistent_subscription_context_t *context,
+    const char *aeron_directory_name);
 
 /**
  * Set the Aeron Archive client context that will be used by the persistent subscription.
@@ -131,8 +161,24 @@ int aeron_archive_persistent_subscription_context_set_start_position(
     int64_t start_position);
 
 /**
+ * Set the listener for events from the persistent subscription.
+ *
+ * @param context to configure.
+ * @param listener the listener to set. The content of the listener struct is copied by value.
+ * @return 0 on success, -1 on error.
+ */
+int aeron_archive_persistent_subscription_context_set_listener(
+    aeron_archive_persistent_subscription_context_t *context,
+    const aeron_archive_persistent_subscription_listener_t *listener);
+
+/**
  * Create a persistent subscription.
- * TODO something about context ownership
+ * <p>
+ * If creating a subscription succeeds, then the subscription will own the context. And closing the
+ * subscription, will close the context.
+ * <p>
+ * If no Aeron client is set on the context, one will be created and owned by the context,
+ * and will be closed when the context is closed via aeron_archive_persistent_subscription_context_close.
  *
  * @param persistent_subscription to set if completed successfully.
  * @param context with the configuration of a persistent subscription to be created.
@@ -176,5 +222,24 @@ int aeron_archive_persistent_subscription_controlled_poll(
  * @return true if live, false otherwise.
  */
 bool aeron_archive_persistent_subscription_is_live(aeron_archive_persistent_subscription_t *persistent_subscription);
+
+/**
+ * Indicates if the persistent subscription is replaying from a recording.
+ *
+ * @param persistent_subscription to check.
+ * @return true if replaying, false otherwise.
+ */
+bool aeron_archive_persistent_subscription_is_replaying(aeron_archive_persistent_subscription_t *persistent_subscription);
+
+/**
+ * Indicates if the persistent subscription has failed.
+ * <p>
+ * The listener will be notified of any terminal errors that can cause the persistent subscription to fail.
+ *
+ * @param persistent_subscription to check.
+ * @return true if failed, false otherwise.
+ * @see aeron_archive_persistent_subscription_context_set_listener
+ */
+bool aeron_archive_persistent_subscription_has_failed(aeron_archive_persistent_subscription_t *persistent_subscription);
 
 #endif //AERON_AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_H
