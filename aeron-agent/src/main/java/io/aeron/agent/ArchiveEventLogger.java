@@ -51,7 +51,6 @@ import static io.aeron.agent.ArchiveEventEncoder.sessionStateChangeLength;
 import static io.aeron.agent.CommonEventEncoder.captureLength;
 import static io.aeron.agent.CommonEventEncoder.encode;
 import static io.aeron.agent.CommonEventEncoder.encodedLength;
-import static io.aeron.agent.CommonEventEncoder.stateTransitionStringLength;
 import static io.aeron.agent.EventConfiguration.EVENT_RING_BUFFER;
 import static java.util.EnumSet.complementOf;
 import static java.util.EnumSet.of;
@@ -183,9 +182,10 @@ public final class ArchiveEventLogger
     public <E extends Enum<E>> void logPersistentSubscriptionStateChange(
         final E oldState,
         final E newState,
-        final long recordingId)
+        final long recordingId,
+        final String replayChannel)
     {
-        final int length = persistentSubscriptionStateChangeLength(oldState, newState);
+        final int length = persistentSubscriptionStateChangeLength(oldState, newState, replayChannel);
         final int captureLength = captureLength(length);
         final int encodedLength = encodedLength(captureLength);
         final ManyToOneRingBuffer ringBuffer = this.ringBuffer;
@@ -202,8 +202,8 @@ public final class ArchiveEventLogger
                     length,
                     oldState,
                     newState,
-                    recordingId
-                );
+                    recordingId,
+                    replayChannel);
             }
             finally
             {

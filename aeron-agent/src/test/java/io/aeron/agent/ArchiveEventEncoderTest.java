@@ -198,17 +198,18 @@ class ArchiveEventEncoderTest
     {
         final int offset = 24;
         final long recordingId = 16;
+        final String replayChannel = "aeron:udp?endpoint=localhost:9010";
         final TimeUnit to = DAYS;
         final TimeUnit from = MILLISECONDS;
         final String payload = from.name() + STATE_SEPARATOR + to.name();
 
-        final int length = payload.length() + SIZE_OF_LONG + SIZE_OF_INT + SIZE_OF_INT;
+        final int length = payload.length() + SIZE_OF_LONG + SIZE_OF_INT + SIZE_OF_INT + replayChannel.length();
         final int captureLength = captureLength(length);
 
         final int encodedLength = encodePersistentSubscriptionStateChange(
-            buffer, offset, captureLength, length, from, to, recordingId);
+            buffer, offset, captureLength, length, from, to, recordingId, replayChannel);
 
-        assertEquals(encodedLength(persistentSubscriptionStateChangeLength(from, to)), encodedLength);
+        assertEquals(encodedLength(persistentSubscriptionStateChangeLength(from, to, replayChannel)), encodedLength);
         assertEquals(captureLength, buffer.getInt(offset, LITTLE_ENDIAN));
         assertEquals(length, buffer.getInt(offset + SIZE_OF_INT, LITTLE_ENDIAN));
         assertEquals(payload, buffer.getStringAscii(offset + LOG_HEADER_LENGTH));

@@ -671,7 +671,10 @@ final class ArchiveEventDissector
         absoluteOffset += buffer.getStringAscii(absoluteOffset, builder, LITTLE_ENDIAN);
         absoluteOffset += SIZE_OF_INT;
         final long recordingId = buffer.getLong(absoluteOffset);
-        builder.append(" recordingId=").append(recordingId);
+        absoluteOffset += SIZE_OF_LONG;
+        final String replayChannel = buffer.getStringAscii(absoluteOffset);
+        builder.append(" recordingId=").append(recordingId)
+            .append(" replayChannel=").append(replayChannel);
     }
 
     private static void appendConnect(final StringBuilder builder)

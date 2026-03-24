@@ -65,12 +65,17 @@ final class ArchiveEventEncoder
         final int length,
         final E from,
         final E to,
-        final long recordingId)
+        final long recordingId,
+        final String replayChannel)
     {
         int encodedLength = encodeLogHeader(encodingBuffer, offset, captureLength, length);
         encodedLength += encodeStateChange(encodingBuffer, offset + encodedLength, from, to);
+
         encodingBuffer.putLong(offset + encodedLength, recordingId, LITTLE_ENDIAN);
         encodedLength += SIZE_OF_LONG;
+        encodedLength += encodeTrailingString(
+            encodingBuffer, offset + encodedLength, captureLength, replayChannel);
+
         return encodedLength;
     }
 
@@ -79,9 +84,10 @@ final class ArchiveEventEncoder
         return stateTransitionStringLength(from, to) + (3 * SIZE_OF_LONG) + (SIZE_OF_INT + reason.length());
     }
 
-    static <E extends Enum<E>> int persistentSubscriptionStateChangeLength(final E from, final E to)
+    static <E extends Enum<E>> int persistentSubscriptionStateChangeLength(final E from, final E to,
+        final String replayChannel)
     {
-        return stateTransitionStringLength(from, to) + SIZE_OF_LONG;
+        return stateTransitionStringLength(from, to) + SIZE_OF_LONG + SIZE_OF_INT + replayChannel.length();
     }
 
     static <E extends Enum<E>> int encodeRecordingSessionStateChange(
