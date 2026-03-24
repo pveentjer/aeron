@@ -199,6 +199,7 @@ class ArchiveEventEncoderTest
         final int offset = 24;
         final long recordingId = 16;
         final String replayChannel = "aeron:udp?endpoint=localhost:9010";
+        final String liveChannel = "aeron:udp?endpoint=localhost:10010";
         final TimeUnit to = DAYS;
         final TimeUnit from = MILLISECONDS;
         final String payload = from.name() + STATE_SEPARATOR + to.name();
@@ -207,9 +208,11 @@ class ArchiveEventEncoderTest
         final int captureLength = captureLength(length);
 
         final int encodedLength = encodePersistentSubscriptionStateChange(
-            buffer, offset, captureLength, length, from, to, recordingId, replayChannel);
+            buffer, offset, captureLength, length, from, to, recordingId, replayChannel, liveChannel);
 
-        assertEquals(encodedLength(persistentSubscriptionStateChangeLength(from, to, replayChannel)), encodedLength);
+        assertEquals(
+            encodedLength(persistentSubscriptionStateChangeLength(from, to, replayChannel, liveChannel)),
+            encodedLength);
         assertEquals(captureLength, buffer.getInt(offset, LITTLE_ENDIAN));
         assertEquals(length, buffer.getInt(offset + SIZE_OF_INT, LITTLE_ENDIAN));
         assertEquals(
@@ -217,5 +220,7 @@ class ArchiveEventEncoderTest
         assertEquals(payload, buffer.getStringAscii(offset + LOG_HEADER_LENGTH + SIZE_OF_LONG));
         assertEquals(replayChannel, buffer.getStringAscii(offset + LOG_HEADER_LENGTH + SIZE_OF_LONG +
             payload.length() + SIZE_OF_INT));
+        assertEquals(liveChannel, buffer.getStringAscii(offset + LOG_HEADER_LENGTH + SIZE_OF_LONG +
+            payload.length() + SIZE_OF_INT + replayChannel.length() + SIZE_OF_INT));
     }
 }

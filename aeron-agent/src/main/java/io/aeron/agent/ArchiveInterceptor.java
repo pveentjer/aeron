@@ -137,9 +137,10 @@ class ArchiveInterceptor
             final E oldState,
             final E newState,
             final long recordingId,
-            final String replayChannel)
+            final String replayChannel,
+            final String liveChannel)
         {
-            LOGGER.logPersistentSubscriptionStateChange(oldState, newState, recordingId, replayChannel);
+            LOGGER.logPersistentSubscriptionStateChange(oldState, newState, recordingId, replayChannel, liveChannel);
         }
     }
 
