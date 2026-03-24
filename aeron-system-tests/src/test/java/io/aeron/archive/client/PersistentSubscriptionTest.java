@@ -1346,7 +1346,7 @@ class PersistentSubscriptionTest
 
     @Test
     @InterruptAfter(5)
-    void shouldStartFromStoppedRecordingAndErrorWhenLiveHaveAdvanced()
+    void shouldStartFromStoppedRecordingAndErrorWhenLiveHasAdvanced()
     {
         final PersistentPublication persistentPublication =
             PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
