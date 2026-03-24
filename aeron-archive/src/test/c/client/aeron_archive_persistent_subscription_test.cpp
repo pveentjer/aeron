@@ -1980,4 +1980,3 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldHandleReplayBeingAheadOfLiv
 
     ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
 }
-
