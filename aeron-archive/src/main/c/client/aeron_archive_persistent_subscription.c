@@ -15,7 +15,7 @@
  */
 
 #include <errno.h>
-#include <stdio.h> // TODO remove
+#include <stdio.h>
 #include <c/aeron_archive_client/controlResponseCode.h>
 
 #include "aeron_alloc.h"
