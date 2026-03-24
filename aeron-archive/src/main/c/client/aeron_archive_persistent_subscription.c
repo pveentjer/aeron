@@ -648,7 +648,10 @@ static void on_archive_error(void *clientd, int errcode, const char *errmsg)
         transition(persistent_subscription, FAILED);
     }
 
-    // TODO call listener
+    if (NULL != persistent_subscription->listener.on_error)
+    {
+        persistent_subscription->listener.on_error(persistent_subscription->listener.clientd, errcode, errmsg);
+    }
 }
 
 int aeron_archive_persistent_subscription_create(
