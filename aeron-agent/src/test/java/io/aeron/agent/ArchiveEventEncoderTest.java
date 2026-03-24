@@ -212,8 +212,10 @@ class ArchiveEventEncoderTest
         assertEquals(encodedLength(persistentSubscriptionStateChangeLength(from, to, replayChannel)), encodedLength);
         assertEquals(captureLength, buffer.getInt(offset, LITTLE_ENDIAN));
         assertEquals(length, buffer.getInt(offset + SIZE_OF_INT, LITTLE_ENDIAN));
-        assertEquals(payload, buffer.getStringAscii(offset + LOG_HEADER_LENGTH));
         assertEquals(
-            recordingId, buffer.getLong(offset + payload.length() + SIZE_OF_INT + LOG_HEADER_LENGTH));
+            recordingId, buffer.getLong(offset + LOG_HEADER_LENGTH));
+        assertEquals(payload, buffer.getStringAscii(offset + LOG_HEADER_LENGTH + SIZE_OF_LONG));
+        assertEquals(replayChannel, buffer.getStringAscii(offset + LOG_HEADER_LENGTH + SIZE_OF_LONG +
+            payload.length() + SIZE_OF_INT));
     }
 }
