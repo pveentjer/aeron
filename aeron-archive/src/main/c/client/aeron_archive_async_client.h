@@ -34,7 +34,7 @@ typedef struct aeron_archive_async_client_listener_stct
         int32_t code,
         const char *error_message);
     void (*on_recording_descriptor)(void *clientd, aeron_archive_recording_descriptor_t *recording_descriptor);
-    // TODO on_error
+    void (*on_error)(void *clientd, int errcode, const char *errmsg);
 }
 aeron_archive_async_client_listener_t;
 
@@ -43,11 +43,13 @@ int aeron_archive_async_client_create(
     aeron_archive_context_t *context,
     aeron_archive_async_client_listener_t *listener);
 
-int aeron_archive_async_client_close(aeron_archive_async_client_t *client);
+int aeron_archive_async_client_destroy(aeron_archive_async_client_t *client);
 
 int aeron_archive_async_client_poll(aeron_archive_async_client_t *client);
 
 bool aeron_archive_async_client_is_connected(aeron_archive_async_client_t *client);
+
+bool aeron_archive_async_client_is_closed(aeron_archive_async_client_t *client);
 
 bool aeron_archive_async_client_try_send_list_recording_request(
     aeron_archive_async_client_t *client,
