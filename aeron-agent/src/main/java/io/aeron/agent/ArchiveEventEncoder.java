@@ -69,10 +69,11 @@ final class ArchiveEventEncoder
         final String replayChannel)
     {
         int encodedLength = encodeLogHeader(encodingBuffer, offset, captureLength, length);
-        encodedLength += encodeStateChange(encodingBuffer, offset + encodedLength, from, to);
 
         encodingBuffer.putLong(offset + encodedLength, recordingId, LITTLE_ENDIAN);
         encodedLength += SIZE_OF_LONG;
+
+        encodedLength += encodeStateChange(encodingBuffer, offset + encodedLength, from, to);
         encodedLength += encodeTrailingString(
             encodingBuffer, offset + encodedLength, captureLength, replayChannel);
 

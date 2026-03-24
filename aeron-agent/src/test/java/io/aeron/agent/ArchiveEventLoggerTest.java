@@ -34,6 +34,7 @@ import static io.aeron.agent.ArchiveEventCode.CATALOG_RESIZE;
 import static io.aeron.agent.ArchiveEventCode.CMD_IN_MAX_RECORDED_POSITION;
 import static io.aeron.agent.ArchiveEventCode.CMD_OUT_RESPONSE;
 import static io.aeron.agent.ArchiveEventCode.CONTROL_SESSION_STATE_CHANGE;
+import static io.aeron.agent.ArchiveEventCode.PERSISTENT_SUBSCRIPTION_STATE_CHANGE;
 import static io.aeron.agent.ArchiveEventCode.RECORDING_SIGNAL;
 import static io.aeron.agent.ArchiveEventCode.REPLAY_SESSION_ERROR;
 import static io.aeron.agent.ArchiveEventCode.REPLICATION_SESSION_DONE;
@@ -87,7 +88,8 @@ class ArchiveEventLoggerTest
         names = {
             "CMD_OUT_RESPONSE", "REPLICATION_SESSION_STATE_CHANGE",
             "CONTROL_SESSION_STATE_CHANGE", "REPLAY_SESSION_ERROR", "CATALOG_RESIZE",
-            "REPLICATION_SESSION_DONE", "REPLAY_SESSION_STATE_CHANGE", "RECORDING_SESSION_STATE_CHANGE"
+            "REPLICATION_SESSION_DONE", "REPLAY_SESSION_STATE_CHANGE", "RECORDING_SESSION_STATE_CHANGE",
+            "PERSISTENT_SUBSCRIPTION_STATE_CHANGE"
         })
     void logControlRequest(final ArchiveEventCode eventCode)
     {
@@ -387,5 +389,28 @@ class ArchiveEventLoggerTest
                  controlSessionId=7829367 correlationId=286331153 recordingId=-99999999999999123""";
 
         assertThat(sb.toString(), Matchers.matchesPattern(expectedMessagePattern));
+    }
+
+    @Test
+    void logPersistentSubscriptionStateChange()
+    {
+        final int offset = ALIGNMENT * 4;
+        logBuffer.putLong(CAPACITY + TAIL_POSITION_OFFSET, offset);
+        final ChronoUnit from = ChronoUnit.CENTURIES;
+        final ChronoUnit to = ChronoUnit.MICROS;
+        final long recordingId = 555_000_000_000L;
+        final String payload = from.name() + STATE_SEPARATOR + to.name();
+        final String replayChannel = "aeron:udp?endpoint=localhost:9010";
+        final int captureLength = SIZE_OF_LONG + SIZE_OF_INT + payload.length() + SIZE_OF_INT + replayChannel.length();
+
+        logger.logPersistentSubscriptionStateChange(from, to, recordingId, replayChannel);
+
+        verifyLogHeader(
+            logBuffer, offset, PERSISTENT_SUBSCRIPTION_STATE_CHANGE.toEventCodeId(), captureLength, captureLength);
+        assertEquals(recordingId, logBuffer.getLong(encodedMsgOffset(offset + LOG_HEADER_LENGTH), LITTLE_ENDIAN));
+        assertEquals(
+            payload, logBuffer.getStringAscii(encodedMsgOffset(offset + LOG_HEADER_LENGTH + SIZE_OF_LONG)));
+        assertEquals(replayChannel, logBuffer.getStringAscii(encodedMsgOffset(
+            offset + LOG_HEADER_LENGTH + SIZE_OF_LONG + SIZE_OF_INT + payload.length())));
     }
 }
