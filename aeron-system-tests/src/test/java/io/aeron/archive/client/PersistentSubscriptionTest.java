@@ -36,6 +36,7 @@ import io.aeron.driver.ThreadingMode;
 import io.aeron.driver.ext.DebugReceiveChannelEndpoint;
 import io.aeron.driver.ext.LossGenerator;
 import io.aeron.driver.status.SubscriberPos;
+import io.aeron.exceptions.AeronEvent;
 import io.aeron.exceptions.TimeoutException;
 import io.aeron.logbuffer.ControlledFragmentHandler;
 import io.aeron.logbuffer.FragmentHandler;
@@ -236,23 +237,6 @@ class PersistentSubscriptionTest
             Assertions.assertEquals(
                 Reason.RECORDING_NOT_FOUND,
                 ((PersistentSubscriptionException)listener.lastException).reason()
-            );
-        }
-    }
-
-    @Test
-    @InterruptAfter(5)
-    void shouldRetryArchiveConnectionIndefinitelyWhenStartingFromArchive()
-    {
-        final AeronArchive.Context archiveContext  = aeronArchiveContext.clone()
-            .controlRequestChannel("aeron:udp?endpoint=localhost:49581|alias=non_existing_endpoint")
-            .messageTimeoutNs(TimeUnit.MILLISECONDS.toNanos(500));
-        persistentSubscriptionCtx.aeronArchiveContext(archiveContext);
-        try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
-        {
-            assertThrows(
-                TimeoutException.class,
-                () -> executeUntil(persistentSubscription::hasFailed, () -> persistentSubscription.controlledPoll(null, 1))
             );
         }
     }
@@ -1178,10 +1162,76 @@ class PersistentSubscriptionTest
         }
     }
 
+    @InterruptAfter(10)
+    @Test
+    void shouldRetryAndRecoverWhenArchiveIsNotAvailableDuringStartUp()
+    {
+        this.archive.close();
+        final File archiveDir = new File(SystemUtil.tmpDirName(), "testLocalArchive");
+        final Archive.Context archiveCtx = this.archiveCtx.clone()
+            .archiveDir(archiveDir)
+            .deleteArchiveOnStart(false);
+        final Archive archive = addCloseable(Archive.launch(archiveCtx.clone()));
+
+        final AeronArchive aeronArchive = addCloseable(AeronArchive.connect(aeronArchiveContext.clone()));
+        assert aeronArchive != null;
+
+        final PersistentPublication persistentPublication =
+            PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
+        final List<byte[]> payloads = generateFixedPayloads(5, ONE_KB_MESSAGE_SIZE);
+        persistentPublication.persist(payloads);
+
+        archive.close();
+
+        final AeronArchive.Context aeronArchiveContext = this.aeronArchiveContext.clone()
+            .messageTimeoutNs(1000000000L);
+        persistentSubscriptionCtx
+            .aeronArchiveContext(aeronArchiveContext)
+            .recordingId(persistentPublication.recordingId())
+            .startPosition(FROM_START)
+            .liveChannel(MDC_SUBSCRIPTION_CHANNEL);
+
+        try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
+        {
+            executeUntil(() -> listener.errorCount > 1, () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+            assertEquals(TimeoutException.class, listener.lastException.getClass());
+            addCloseable(Archive.launch(archiveCtx.clone()));
+            executeUntil(persistentSubscription::isLive, () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+            assertPayloads(payloads, fragmentHandler.receivedPayloads);
+        }
+    }
 
     @InterruptAfter(5)
     @Test
-    void shouldRetryLiveConnectionIndefinitelyWhenStartingFromLive(){
+    void shouldFallBackToArchiveAndFailWhenConnectingToClosedLivePublicationOnStartUp(){
+
+        final ExclusivePublication publication = aeron.addExclusivePublication(MDC_PUBLICATION_CHANNEL, STREAM_ID);
+        aeronArchive.startRecording(MDC_PUBLICATION_CHANNEL, STREAM_ID, SourceLocation.LOCAL);
+
+        final PersistentPublication persistentPublication = PersistentPublication.create(aeronArchive, publication);
+
+        final List<byte[]> payloads = generateRandomPayloads(5);
+        persistentPublication.persist(payloads);
+
+        publication.close();
+        Tests.await(publication::isClosed);
+
+        persistentSubscriptionCtx
+            .recordingId(persistentPublication.recordingId)
+            .startPosition(FROM_LIVE)
+            .liveChannel(MDC_SUBSCRIPTION_CHANNEL);
+
+        try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
+        {
+            executeUntil(() -> listener.errorCount > 0, () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+            assertEquals(ArchiveException.class, listener.lastException.getClass());
+            assertTrue(persistentSubscription.hasFailed());
+         }
+    }
+
+    @InterruptAfter(5)
+    @Test
+    void shouldReportErrorAndWaitWhenLiveChannelDoesNotExist(){
         final PersistentPublication persistentPublication =
             PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
 
@@ -1190,13 +1240,19 @@ class PersistentSubscriptionTest
 
         final String livePublicationChannel = "aeron:udp?control=localhost:49583|control-mode=dynamic|fc=max|alias=non_existing_endpoint";
 
+        final AeronArchive.Context aeronArchiveContext = this.aeronArchiveContext.clone()
+            .messageTimeoutNs(1000000000L);
         persistentSubscriptionCtx
+            .aeronArchiveContext(aeronArchiveContext)
             .recordingId(persistentPublication.recordingId())
             .startPosition(FROM_LIVE)
             .liveChannel(livePublicationChannel);
 
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
+            executeUntil(() -> listener.errorCount > 0, () -> persistentSubscription.controlledPoll(null, 1));
+            assertEquals(1, listener.errorCount);
+            assertEquals(AeronEvent.class, listener.lastException.getClass());
             assertThrows(
                 TimeoutException.class,
                 () -> executeUntil(persistentSubscription::hasFailed, () -> persistentSubscription.controlledPoll(null, 1))
