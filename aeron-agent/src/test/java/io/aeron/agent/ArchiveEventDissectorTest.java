@@ -20,6 +20,7 @@ import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.jupiter.api.Test;
 
 import static io.aeron.agent.ArchiveEventCode.*;
+import static io.aeron.agent.ArchiveEventCode.PERSISTENT_SUBSCRIPTION_STATE_CHANGE;
 import static io.aeron.agent.ArchiveEventDissector.*;
 import static io.aeron.agent.CommonEventEncoder.LOG_HEADER_LENGTH;
 import static io.aeron.agent.CommonEventEncoder.internalEncodeLogHeader;
@@ -971,12 +972,14 @@ class ArchiveEventDissectorTest
         buffer.putLong(LOG_HEADER_LENGTH, -10_000_000_000L, LITTLE_ENDIAN);
         final int length = buffer.putStringAscii(LOG_HEADER_LENGTH, "x -> y");
         buffer.putLong(LOG_HEADER_LENGTH + length, 16);
+        buffer.putStringAscii(LOG_HEADER_LENGTH + length + SIZE_OF_LONG, "aeron:udp?endpoint=localhost:9010");
 
-        dissectPersistentSubscriptionStateChange(ArchiveEventCode.PERSISTENT_SUBSCRIPTION_STATE_CHANGE, buffer, 0, builder);
+        dissectPersistentSubscriptionStateChange(PERSISTENT_SUBSCRIPTION_STATE_CHANGE, buffer, 0, builder);
 
         assertEquals("[1.500000000] " + CONTEXT + ": " + PERSISTENT_SUBSCRIPTION_STATE_CHANGE.name() + " [10/20]:" +
                 " x -> y" +
-                " recordingId=16",
+                " recordingId=16" +
+                " replayChannel=aeron:udp?endpoint=localhost:9010",
             builder.toString());
     }
 }
