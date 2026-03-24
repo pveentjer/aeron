@@ -615,7 +615,7 @@ static void on_archive_control_response(
     else if (correlation_id == persistent_subscription->replay_request.correlation_id)
     {
         async_archive_op_on_control_response(
-            &persistent_subscription->replay_request, correlation_id, code, error_message);
+            &persistent_subscription->replay_request, relevant_id, code, error_message);
     }
 }
 
