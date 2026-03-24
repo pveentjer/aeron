@@ -533,6 +533,18 @@ static void on_archive_recording_descriptor(void *clientd, aeron_archive_recordi
     }
 }
 
+static void on_archive_error(void *clientd, int errcode, const char *errmsg)
+{
+    aeron_archive_persistent_subscription_t *persistent_subscription = clientd;
+
+    if (aeron_archive_async_client_is_closed(persistent_subscription->archive))
+    {
+        transition(persistent_subscription, FAILED);
+    }
+
+    // TODO call listener
+}
+
 int aeron_archive_persistent_subscription_create(
     aeron_archive_persistent_subscription_t **persistent_subscription,
     aeron_archive_persistent_subscription_context_t *context)
@@ -572,6 +584,7 @@ int aeron_archive_persistent_subscription_create(
     _persistent_subscription->archive_listener.on_disconnected = on_archive_disconnected;
     _persistent_subscription->archive_listener.on_control_response = on_archive_control_response;
     _persistent_subscription->archive_listener.on_recording_descriptor = on_archive_recording_descriptor;
+    _persistent_subscription->archive_listener.on_error = on_archive_error;
 
     aeron_archive_context_set_aeron(context->archive_context, context->aeron);
 
@@ -608,7 +621,7 @@ int aeron_archive_persistent_subscription_close(aeron_archive_persistent_subscri
         clean_up_live_subscription(persistent_subscription);
         clean_up_replay(persistent_subscription);
         clean_up_replay_subscription(persistent_subscription);
-        aeron_archive_async_client_close(persistent_subscription->archive);
+        aeron_archive_async_client_destroy(persistent_subscription->archive);
         aeron_image_controlled_fragment_assembler_delete(persistent_subscription->assembler);
         aeron_free(persistent_subscription);
     }
