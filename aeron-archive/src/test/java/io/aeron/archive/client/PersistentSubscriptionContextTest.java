@@ -128,7 +128,7 @@ class PersistentSubscriptionContextTest
     }
 
     @Test
-    void contextThrowsIfSttPositionIsInvalid()
+    void contextThrowsIfRecordingIdIsInvalid()
     {
         context.recordingId(-2);
         assertThrows(ConfigurationException.class, context::conclude);
