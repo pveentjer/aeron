@@ -464,7 +464,7 @@ static bool max_recorded_position_await_max_position(
             if (NULL != persistent_subscription->listener.on_error)
             {
                 char message[AERON_ERROR_MAX_TOTAL_LENGTH];
-                snprintf(message, sizeof(message), "get max recorded position request failed: %s",
+                snprintf(message, sizeof(message), "Get max recorded position request failed: %s",
                     max_recorded_position->op.error_message);
 
                 persistent_subscription->listener.on_error(
@@ -576,9 +576,7 @@ static void on_live_image_deadline_breached(aeron_archive_persistent_subscriptio
         persistent_subscription->listener.on_error(
             persistent_subscription->listener.clientd,
             ETIMEDOUT,
-            "no image became available on the live subscription within the message timeout. "
-            "this could be caused by the publisher being down, or by a misconfiguration of the "
-            "subscriber or a firewall between them.");
+            "No image became available on the live subscription within the message timeout.");
     }
 }
 
@@ -768,15 +766,7 @@ int aeron_archive_persistent_subscription_close(aeron_archive_persistent_subscri
 
 static int await_archive_connection(aeron_archive_persistent_subscription_t *persistent_subscription)
 {
-    static int64_t check_count = 0;
     bool connected = aeron_archive_async_client_is_connected(persistent_subscription->archive);
-    if (++check_count == 1 || check_count % 100000 == 0)
-    {
-        printf("await_archive_connection: count=%" PRId64 ", connected=%d\n",
-            check_count, connected);
-        fflush(stdout);
-    }
-
     if (!connected)
     {
         return 0;
@@ -847,7 +837,7 @@ static bool validate_descriptor(aeron_archive_persistent_subscription_t *persist
                 persistent_subscription->listener.on_error(
                     persistent_subscription->listener.clientd,
                     EINVAL,
-                    "live stream id does not match stream id of recording");
+                    "Live stream id does not match stream id of recording");
             }
 
             return false;
@@ -864,7 +854,7 @@ static bool validate_descriptor(aeron_archive_persistent_subscription_t *persist
                     persistent_subscription->listener.on_error(
                         persistent_subscription->listener.clientd,
                         EINVAL,
-                        "requested position is lower than start position of recording");
+                        "Requested position is lower than start position of recording");
                 }
 
                 return false;
@@ -880,7 +870,7 @@ static bool validate_descriptor(aeron_archive_persistent_subscription_t *persist
                     persistent_subscription->listener.on_error(
                         persistent_subscription->listener.clientd,
                         EINVAL,
-                        "requested position is greater than stop position of recording");
+                        "Requested position is greater than stop position of recording");
                 }
 
                 return false;
@@ -900,7 +890,7 @@ static bool validate_descriptor(aeron_archive_persistent_subscription_t *persist
             persistent_subscription->listener.on_error(
                 persistent_subscription->listener.clientd,
                 EINVAL,
-                "no recording found with requested recording id");
+                "No recording found with requested recording id");
         }
 
         return false;
@@ -1013,7 +1003,7 @@ static int await_replay_response(aeron_archive_persistent_subscription_t *persis
         if (NULL != persistent_subscription->listener.on_error)
         {
             char message[AERON_ERROR_MAX_TOTAL_LENGTH];
-            snprintf(message, sizeof(message), "replay request failed: %s",
+            snprintf(message, sizeof(message), "Replay request failed: %s",
                 persistent_subscription->replay_request.error_message);
 
             persistent_subscription->listener.on_error(
