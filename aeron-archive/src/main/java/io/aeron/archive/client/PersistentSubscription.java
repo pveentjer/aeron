@@ -1091,8 +1091,7 @@ public final class PersistentSubscription implements AutoCloseable
 
     private void state(final State newState)
     {
-        // TODO log: replayChannel, liveChannel, replayStreamId, liveStreamId
-        logStateChange(state, newState, recordingId, replayChannel, liveChannel);
+        logStateChange(state, newState, recordingId, replayStreamId, liveStreamId, replayChannel, liveChannel);
         if (newState != this.state)
         {
             this.state = newState;
@@ -1100,7 +1099,12 @@ public final class PersistentSubscription implements AutoCloseable
     }
 
     private void logStateChange(
-        final State oldState, final State newState, final long recordingId, final String replayChannel,
+        final State oldState,
+        final State newState,
+        final long recordingId,
+        final int replayStreamId,
+        final int liveStreamId,
+        final String replayChannel,
         final String liveChannel)
     {
         System.out.println("State: " + oldState + " -> " + newState);
