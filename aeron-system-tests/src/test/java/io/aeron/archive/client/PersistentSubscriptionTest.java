@@ -1184,7 +1184,7 @@ class PersistentSubscriptionTest
         archive.close();
 
         final AeronArchive.Context aeronArchiveContext = this.aeronArchiveContext.clone()
-            .messageTimeoutNs(1000000000L);
+            .messageTimeoutNs(TimeUnit.SECONDS.toNanos(1));
         persistentSubscriptionCtx
             .aeronArchiveContext(aeronArchiveContext)
             .recordingId(persistentPublication.recordingId())
@@ -1203,20 +1203,26 @@ class PersistentSubscriptionTest
 
     @InterruptAfter(5)
     @Test
-    void shouldFallBackToArchiveAndFailWhenConnectingToClosedLivePublicationOnStartUp(){
+    void shouldRetryAndRecoverWhenLiveIsNotAvailableDuringStartUp(){
 
-        final ExclusivePublication publication = aeron.addExclusivePublication(MDC_PUBLICATION_CHANNEL, STREAM_ID);
+        final ExclusivePublication publication = addCloseable(aeron.addExclusivePublication(MDC_PUBLICATION_CHANNEL, STREAM_ID));
         aeronArchive.startRecording(MDC_PUBLICATION_CHANNEL, STREAM_ID, SourceLocation.LOCAL);
 
         final PersistentPublication persistentPublication = PersistentPublication.create(aeronArchive, publication);
-
         final List<byte[]> payloads = generateRandomPayloads(5);
         persistentPublication.persist(payloads);
 
-        publication.close();
+        final Subscription subscription = addCloseable(aeron.addSubscription(MDC_SUBSCRIPTION_CHANNEL, STREAM_ID));
+        Tests.await(subscription::isConnected);
+        Tests.await(() -> subscription.imageCount() > 0);
+        publication.revoke();
         Tests.await(publication::isClosed);
+        Tests.await(() -> subscription.imageCount() == 0);
+        subscription.close();
 
         persistentSubscriptionCtx
+            .aeronArchiveContext(aeronArchiveContext.clone()
+                .messageTimeoutNs(TimeUnit.SECONDS.toNanos(1)))
             .recordingId(persistentPublication.recordingId)
             .startPosition(FROM_LIVE)
             .liveChannel(MDC_SUBSCRIPTION_CHANNEL);
@@ -1224,42 +1230,12 @@ class PersistentSubscriptionTest
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
             executeUntil(() -> listener.errorCount > 0, () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
-            assertEquals(ArchiveException.class, listener.lastException.getClass());
-            assertTrue(persistentSubscription.hasFailed());
-         }
-    }
-
-    @InterruptAfter(5)
-    @Test
-    void shouldReportErrorAndWaitWhenLiveChannelDoesNotExist(){
-        final PersistentPublication persistentPublication =
-            PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
-
-        final List<byte[]> payloads = generateRandomPayloads(5);
-        persistentPublication.persist(payloads);
-
-        final String livePublicationChannel = "aeron:udp?control=localhost:49583|control-mode=dynamic|fc=max|alias=non_existing_endpoint";
-
-        final AeronArchive.Context aeronArchiveContext = this.aeronArchiveContext.clone()
-            .messageTimeoutNs(1000000000L);
-        persistentSubscriptionCtx
-            .aeronArchiveContext(aeronArchiveContext)
-            .recordingId(persistentPublication.recordingId())
-            .startPosition(FROM_LIVE)
-            .liveChannel(livePublicationChannel);
-
-        try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
-        {
-            executeUntil(() -> listener.errorCount > 0, () -> persistentSubscription.controlledPoll(null, 1));
-            assertEquals(1, listener.errorCount);
             assertEquals(AeronEvent.class, listener.lastException.getClass());
-            assertThrows(
-                TimeoutException.class,
-                () -> executeUntil(persistentSubscription::hasFailed, () -> persistentSubscription.controlledPoll(null, 1))
-            );
+            assertEquals(0, listener.liveJoinedCount);
+            addCloseable(aeron.addExclusivePublication(MDC_PUBLICATION_CHANNEL, STREAM_ID));
+            executeUntil( persistentSubscription::isLive, () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
         }
     }
-
 
     @Test
     @InterruptAfter(5)
