@@ -18,6 +18,7 @@
 #include <c/aeron_archive_client/messageHeader.h>
 #include <c/aeron_archive_client/recordingDescriptor.h>
 #include <errno.h>
+#include <inttypes.h>
 
 #include "aeron_alloc.h"
 #include "aeron_archive_async_client.h"
@@ -44,14 +45,17 @@ struct aeron_archive_async_client_stct
     aeron_archive_async_client_state_t state;
     aeron_archive_context_t *context;
     aeron_archive_async_client_listener_t *listener;
-    aeron_fragment_assembler_t *fragment_assembler;
+    aeron_controlled_fragment_assembler_t *fragment_assembler;
     aeron_archive_async_connect_t *async_connect;
     aeron_archive_t *archive;
-    char *error_message;
-    size_t error_message_capacity;
+    bool error_on_fragment;
 };
 
-static void poll_handler(void *clientd, const uint8_t *buffer, size_t length, aeron_header_t *header);
+static aeron_controlled_fragment_handler_action_t poll_handler(
+    void *clientd,
+    const uint8_t *buffer,
+    size_t length,
+    aeron_header_t *header);
 
 int aeron_archive_async_client_create(
     aeron_archive_async_client_t **client,
@@ -77,16 +81,9 @@ int aeron_archive_async_client_create(
         return -1;
     }
 
-    if (aeron_fragment_assembler_create(&_client->fragment_assembler, poll_handler, _client) < 0)
+    if (aeron_controlled_fragment_assembler_create(&_client->fragment_assembler, poll_handler, _client) < 0)
     {
-        AERON_APPEND_ERR("%s", "aeron_fragment_assembler_create failed");
-        goto cleanup;
-    }
-
-    _client->error_message_capacity = 16; // TODO what's a good value?
-    if (aeron_alloc((void **)&_client->error_message, _client->error_message_capacity) < 0)
-    {
-        AERON_APPEND_ERR("%s", "failed to allocate error_message");
+        AERON_APPEND_ERR("%s", "aeron_controlled_fragment_assembler_create failed");
         goto cleanup;
     }
 
@@ -98,12 +95,12 @@ int aeron_archive_async_client_create(
     return 0;
 
 cleanup:
-    aeron_fragment_assembler_delete(_client->fragment_assembler);
+    aeron_controlled_fragment_assembler_delete(_client->fragment_assembler);
     aeron_free(_client);
     return -1;
 }
 
-int aeron_archive_async_client_close(aeron_archive_async_client_t *client)
+int aeron_archive_async_client_destroy(aeron_archive_async_client_t *client)
 {
     if (NULL != client)
     {
@@ -117,6 +114,7 @@ int aeron_archive_async_client_close(aeron_archive_async_client_t *client)
             aeron_archive_async_connect_delete(client->async_connect);
         }
 
+        aeron_controlled_fragment_assembler_delete(client->fragment_assembler);
         aeron_free(client);
     }
 
@@ -148,8 +146,9 @@ static int aeron_archive_async_client_connecting(aeron_archive_async_client_t *c
 
         if (aeron_archive_async_connect(&client->async_connect, client->context) < 0)
         {
-            AERON_APPEND_ERR("%s", "aeron_archive_async_connect failed");
-            return -1;
+            client->state = AERON_ARCHIVE_ASYNC_CLIENT_CLOSED;
+            client->listener->on_error(client->listener->clientd, aeron_errcode(), aeron_errmsg());
+            return 1;
         }
 
         bool has_aeron = client->context->aeron != NULL;
@@ -167,6 +166,7 @@ static int aeron_archive_async_client_connecting(aeron_archive_async_client_t *c
     if (aeron_archive_async_connect_poll(&client->archive, client->async_connect) < 0)
     {
         client->async_connect = NULL;
+        client->listener->on_error(client->listener->clientd, aeron_errcode(), aeron_errmsg());
         return 1;
     }
 
@@ -194,7 +194,21 @@ static int aeron_archive_async_client_connected(aeron_archive_async_client_t *cl
         return 1;
     }
 
-    return aeron_subscription_poll(subscription, aeron_fragment_assembler_handler, client->fragment_assembler, 10);
+    int fragments = aeron_subscription_controlled_poll(
+        subscription,
+        aeron_controlled_fragment_assembler_handler,
+        client->fragment_assembler,
+        10);
+
+    if (0 < fragments && client->error_on_fragment)
+    {
+        aeron_archive_close(client->archive);
+        client->archive = NULL;
+        client->state = AERON_ARCHIVE_ASYNC_CLIENT_CLOSED;
+        client->listener->on_error(client->listener->clientd, aeron_errcode(), aeron_errmsg());
+    }
+
+    return fragments;
 }
 
 static int aeron_archive_async_client_disconnected(aeron_archive_async_client_t *client)
@@ -209,6 +223,11 @@ static int aeron_archive_async_client_disconnected(aeron_archive_async_client_t 
 bool aeron_archive_async_client_is_connected(aeron_archive_async_client_t *client)
 {
     return client->state == AERON_ARCHIVE_ASYNC_CLIENT_CONNECTED;
+}
+
+bool aeron_archive_async_client_is_closed(aeron_archive_async_client_t *client)
+{
+    return client->state == AERON_ARCHIVE_ASYNC_CLIENT_CLOSED;
 }
 
 bool aeron_archive_async_client_try_send_list_recording_request(
@@ -307,11 +326,13 @@ bool aeron_archive_async_client_try_send_stop_replay_request(
     return false;
 }
 
-static void poll_handler(void *clientd, const uint8_t *buffer, size_t length, aeron_header_t *header)
+static aeron_controlled_fragment_handler_action_t poll_handler(
+    void *clientd,
+    const uint8_t *buffer,
+    size_t length,
+    aeron_header_t *header)
 {
     aeron_archive_async_client_t *client = (aeron_archive_async_client_t *)clientd;
-
-    // TODO what to do with errors here?
 
     struct aeron_archive_client_messageHeader hdr;
     if (aeron_archive_client_messageHeader_wrap(
@@ -321,9 +342,9 @@ static void poll_handler(void *clientd, const uint8_t *buffer, size_t length, ae
         aeron_archive_client_messageHeader_sbe_schema_version(),
         length) == NULL)
     {
-        // AERON_SET_ERR(errno, "%s", "unable to wrap buffer");
-        // poller->error_on_fragment = true;
-        return;
+        AERON_SET_ERR(errno, "%s", "unable to wrap buffer");
+        client->error_on_fragment = true;
+        return AERON_ACTION_BREAK;
     }
 
     uint16_t block_length = aeron_archive_client_messageHeader_blockLength(&hdr);
@@ -333,9 +354,9 @@ static void poll_handler(void *clientd, const uint8_t *buffer, size_t length, ae
 
     if (schema_id != aeron_archive_client_messageHeader_sbe_schema_id())
     {
-        // AERON_SET_ERR(-1, "found schema id: %i that doesn't match expected id: %i", schema_id, aeron_archive_client_messageHeader_sbe_schema_id());
-        // poller->error_on_fragment = true;
-        return;
+        AERON_SET_ERR(-1, "found schema id: %i that doesn't match expected id: %i", schema_id, aeron_archive_client_messageHeader_sbe_schema_id());
+        client->error_on_fragment = true;
+        return AERON_ACTION_BREAK;
     }
 
     switch (template_id)
@@ -362,36 +383,37 @@ static void poll_handler(void *clientd, const uint8_t *buffer, size_t length, ae
                     &control_response,
                     (enum aeron_archive_client_controlResponseCode *)&code))
                 {
-                    // AERON_SET_ERR(-1, "%s", "unable to read control response code");
-                    // poller->error_on_fragment = true;
-                    return;
+                    AERON_SET_ERR(-1, "%s", "unable to read control response code");
+                    client->error_on_fragment = true;
+                    return AERON_ACTION_BREAK;
                 }
 
+                char *error_message = NULL;
                 uint32_t error_message_len = aeron_archive_client_controlResponse_errorMessage_length(&control_response);
-                uint32_t len_with_terminator = error_message_len + 1;
-                if (len_with_terminator > client->error_message_capacity)
+                if (0 < error_message_len)
                 {
-                    if (aeron_reallocf((void **)&client->error_message, len_with_terminator) < 0)
+                    error_message = malloc(error_message_len + 1);
+                    if (NULL == error_message)
                     {
-                        // AERON_APPEND_ERR("%s", "failed to reallocate error_message");
-                        // poller->error_on_fragment = true;
-                        return;
+                        AERON_SET_ERR(ENOMEM, "failed to malloc error_message of length %" PRIu32, error_message_len);
+                        client->error_on_fragment = true;
+                        return AERON_ACTION_BREAK;
                     }
-                    client->error_message_capacity = len_with_terminator;
+                    aeron_archive_client_controlResponse_get_errorMessage(
+                        &control_response,
+                        error_message,
+                        error_message_len);
+                    error_message[error_message_len] = '\0';
                 }
-
-                aeron_archive_client_controlResponse_get_errorMessage(
-                    &control_response,
-                    client->error_message,
-                    error_message_len);
-                client->error_message[error_message_len] = '\0';
 
                 client->listener->on_control_response(
                     client->listener->clientd,
                     correlation_id,
                     relevant_id,
                     code,
-                    client->error_message);
+                    error_message != NULL ? error_message : "");
+
+                free(error_message);
             }
             break;
         }
@@ -417,9 +439,9 @@ static void poll_handler(void *clientd, const uint8_t *buffer, size_t length, ae
                 descriptor.stripped_channel_length = view.length;
                 if (aeron_alloc((void **)&descriptor.stripped_channel, descriptor.stripped_channel_length + 1) < 0)
                 {
-                    // AERON_APPEND_ERR("%s", "");
-                    // poller->error_on_fragment = true;
-                    return;
+                    AERON_APPEND_ERR("%s", "");
+                    client->error_on_fragment = true;
+                    return AERON_ACTION_BREAK;
                 }
                 memcpy(descriptor.stripped_channel, view.data, descriptor.stripped_channel_length);
                 descriptor.stripped_channel[descriptor.stripped_channel_length] = '\0';
@@ -429,9 +451,9 @@ static void poll_handler(void *clientd, const uint8_t *buffer, size_t length, ae
                 if (aeron_alloc((void **)&descriptor.original_channel, descriptor.original_channel_length + 1) < 0)
                 {
                     aeron_free(descriptor.stripped_channel);
-                    // AERON_APPEND_ERR("%s", "");
-                    // poller->error_on_fragment = true;
-                    return;
+                    AERON_APPEND_ERR("%s", "");
+                    client->error_on_fragment = true;
+                    return AERON_ACTION_BREAK;
                 }
                 memcpy(descriptor.original_channel, view.data, descriptor.original_channel_length);
                 descriptor.original_channel[descriptor.original_channel_length] = '\0';
@@ -442,9 +464,9 @@ static void poll_handler(void *clientd, const uint8_t *buffer, size_t length, ae
                 {
                     aeron_free(descriptor.stripped_channel);
                     aeron_free(descriptor.original_channel);
-                    // AERON_APPEND_ERR("%s", "");
-                    // poller->error_on_fragment = true;
-                    return;
+                    AERON_APPEND_ERR("%s", "");
+                    client->error_on_fragment = true;
+                    return AERON_ACTION_BREAK;
                 }
                 memcpy(descriptor.source_identity, view.data, descriptor.source_identity_length);
                 descriptor.source_identity[descriptor.source_identity_length] = '\0';
@@ -473,4 +495,6 @@ static void poll_handler(void *clientd, const uint8_t *buffer, size_t length, ae
             }
         }
     }
+
+    return AERON_ACTION_CONTINUE;
 }

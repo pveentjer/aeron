@@ -51,6 +51,7 @@ class AeronArchiveAsyncClientTest : public testing::Test
 protected:
     const std::string m_recordingChannel = "aeron:udp?endpoint=localhost:3333";
     const std::int32_t m_recordingStreamId = 33;
+    aeron_archive_t *m_archive = nullptr;
 
     void connect(const std::string& aeronDir)
     {
@@ -199,9 +200,6 @@ protected:
             17
         };
     }
-
-private:
-    aeron_archive_t *m_archive = nullptr;
 };
 
 struct ControlResponse
@@ -231,6 +229,12 @@ struct RecordingDescriptor
     std::string source_identity;
 };
 
+struct Error
+{
+    int errcode;
+    std::string errmsg;
+};
+
 struct TestAsyncArchiveClientListener
 {
     aeron_archive_async_client_listener_t listener;
@@ -238,6 +242,7 @@ struct TestAsyncArchiveClientListener
     int disconnectedCount;
     std::vector<ControlResponse> controlResponses;
     RecordingDescriptor* lastRecordingDescriptor;
+    std::vector<Error> errors;
 
     TestAsyncArchiveClientListener() :
         listener({
@@ -245,12 +250,14 @@ struct TestAsyncArchiveClientListener
             onConnected,
             onDisconnected,
             onControlResponse,
-            onRecordingDescriptor
+            onRecordingDescriptor,
+            onError
         }),
         connectedCount(0),
         disconnectedCount(0),
         controlResponses(std::vector<ControlResponse>{}),
-        lastRecordingDescriptor(nullptr)
+        lastRecordingDescriptor(nullptr),
+        errors(std::vector<Error>{})
     {
     }
 
@@ -321,6 +328,17 @@ struct TestAsyncArchiveClientListener
             std::string(recording_descriptor->source_identity)
         });
     }
+
+    static void onError(void *clientd, int errcode, const char *errmsg)
+    {
+        const auto self = static_cast<TestAsyncArchiveClientListener*>(clientd);
+        self->errors.emplace_back(Error{errcode, std::string(errmsg)});
+    }
+
+    const Error* lastError() const
+    {
+        return errors.empty() ? nullptr : &errors.back();
+    }
 };
 
 template<typename T>
@@ -377,6 +395,14 @@ RecordingDescriptor* pollUntilRecordingDescriptorReceived(
         [&] { return listener.lastRecordingDescriptor; },
         [](auto x) { return x != nullptr; });
     return listener.lastRecordingDescriptor;
+}
+
+void pollUntilTrue(
+    const std::string& label,
+    aeron_archive_async_client_t *client,
+    const std::function<bool()>& supplier)
+{
+    pollUntil<bool>(label, client, supplier, [](auto x) { return x; });
 }
 
 class DriverResource
@@ -519,6 +545,77 @@ TEST_F(AeronArchiveAsyncClientTest, testAeronArchiveAsyncClient)
         pollUntil<int>("is reconnected", client, [&] { return listener.connectedCount; }, [](const int x) { return x == 2; });
         ASSERT_TRUE(aeron_archive_async_client_is_connected(client));
 
-        ASSERT_EQ(0, aeron_archive_async_client_close(client));
+        ASSERT_EQ(0, aeron_archive_async_client_destroy(client));
     }
+}
+
+TEST_F(AeronArchiveAsyncClientTest, shouldAllowToStopReplay)
+{
+    char aeron_dir[AERON_MAX_PATH];
+    aeron_default_path(aeron_dir, sizeof(aeron_dir));
+
+    TestArchive testArchive = createTestArchive(aeron_dir);
+
+    AeronResource aeron(aeron_dir);
+
+    aeron_archive_context_t *context;
+    ASSERT_EQ(0, aeron_archive_context_init(&context)) << aeron_errmsg();
+    ASSERT_EQ(0, aeron_archive_context_set_aeron(context, aeron.aeron())) << aeron_errmsg();
+    ASSERT_EQ(0, aeron_archive_context_set_control_request_channel(context, "aeron:udp?endpoint=localhost:8010")) << aeron_errmsg();
+    ASSERT_EQ(0, aeron_archive_context_set_control_response_channel(context, "aeron:udp?endpoint=localhost:0")) << aeron_errmsg();
+    ASSERT_EQ(0, Credentials::defaultCredentials().configure(context)) << aeron_errmsg();
+
+    TestAsyncArchiveClientListener listener;
+
+    aeron_archive_async_client_t *client;
+    ASSERT_EQ(0, aeron_archive_async_client_create(&client, context, &listener.listener));
+
+    pollUntilTrue("is connected", client, [&] { return listener.connectedCount > 0; });
+    ASSERT_TRUE(aeron_archive_async_client_is_connected(client));
+
+    connect(aeron_dir);
+
+    aeron_exclusive_publication_t *publication;
+    ASSERT_EQ(0, aeron_archive_add_recorded_exclusive_publication(&publication, m_archive, "aeron:ipc", 5000)) << aeron_errmsg();
+    aeron_subscription_t *subscription = addSubscription(aeron.aeron(), "aeron:ipc", 6000);
+
+    aeron_archive_replay_params_t replay_params;
+    aeron_archive_replay_params_init(&replay_params);
+    ASSERT_TRUE(aeron_archive_async_client_try_send_replay_request(client, 1, 0, "aeron:ipc", 6000, &replay_params));
+    auto replayResponse = pollUntilControlResponseReceived(client, listener, 1);
+    ASSERT_EQ(1, replayResponse->correlation_id);
+    ASSERT_EQ(aeron_archive_client_controlResponseCode_OK, replayResponse->code);
+
+    const auto session_id = static_cast<int32_t>(replayResponse->relevant_id);
+    pollUntilTrue("image available", client, [&] { return aeron_subscription_image_by_session_id(subscription, session_id) != nullptr; });
+    aeron_image_t *image = aeron_subscription_image_by_session_id(subscription, session_id);
+
+    ASSERT_TRUE(aeron_archive_async_client_try_send_stop_replay_request(client, 2, replayResponse->relevant_id));
+    auto stopReplayResponse = pollUntilControlResponseReceived(client, listener, 2);
+    ASSERT_EQ(2, stopReplayResponse->correlation_id);
+    ASSERT_EQ(aeron_archive_client_controlResponseCode_OK, stopReplayResponse->code);
+
+    pollUntilTrue("EOS", client, [&] { return aeron_image_is_end_of_stream(image); });
+
+    ASSERT_EQ(0, aeron_archive_async_client_destroy(client));
+}
+
+TEST_F(AeronArchiveAsyncClientTest, shouldCloseItselfIfErrorIsTerminal)
+{
+    TestAsyncArchiveClientListener listener;
+
+    aeron_archive_context_t *context;
+    ASSERT_EQ(0, aeron_archive_context_init(&context)) << aeron_errmsg();
+
+    aeron_archive_async_client_t *client;
+    ASSERT_EQ(0, aeron_archive_async_client_create(&client, context, &listener.listener));
+
+    pollUntilTrue("error reported", client, [&] { return !listener.errors.empty(); });
+    const auto error = listener.lastError();
+    EXPECT_EQ(error->errcode, EINVAL);
+    EXPECT_THAT(error->errmsg, testing::HasSubstr("aeron_archive_context_conclude"));
+
+    EXPECT_TRUE(aeron_archive_async_client_is_closed(client));
+
+    EXPECT_EQ(0, aeron_archive_async_client_destroy(client));
 }
