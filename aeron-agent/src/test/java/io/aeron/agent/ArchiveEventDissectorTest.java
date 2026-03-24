@@ -28,6 +28,7 @@ import static io.aeron.agent.EventConfiguration.MAX_EVENT_LENGTH;
 import static io.aeron.archive.codecs.ControlResponseCode.NULL_VAL;
 import static java.nio.ByteOrder.LITTLE_ENDIAN;
 import static java.nio.charset.StandardCharsets.US_ASCII;
+import static org.agrona.BitUtil.SIZE_OF_INT;
 import static org.agrona.BitUtil.SIZE_OF_LONG;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -968,17 +969,23 @@ class ArchiveEventDissectorTest
     @Test
     void persistentSubscriptionStateChange()
     {
-        internalEncodeLogHeader(buffer, 0, 10, 20, () -> 1_500_000_000L);
-        buffer.putLong(LOG_HEADER_LENGTH, -10_000_000_000L, LITTLE_ENDIAN);
-        buffer.putLong(LOG_HEADER_LENGTH, 16);
-        int length = buffer.putStringAscii(LOG_HEADER_LENGTH + SIZE_OF_LONG, "x -> y");
-        length += buffer.putStringAscii(LOG_HEADER_LENGTH + SIZE_OF_LONG + length, "aeron:udp?endpoint=localhost:9010");
-        buffer.putStringAscii(LOG_HEADER_LENGTH + SIZE_OF_LONG + length, "aeron:udp?endpoint=localhost:10010");
+        int offset = internalEncodeLogHeader(buffer, 0, 10, 20, () -> 1_500_000_000L);
+        buffer.putLong(offset, 16);
+        offset += SIZE_OF_LONG;
+        buffer.putInt(offset, 10);
+        offset += SIZE_OF_INT;
+        buffer.putInt(offset, 11);
+        offset += SIZE_OF_INT;
+        offset += buffer.putStringAscii(offset, "x -> y");
+        offset += buffer.putStringAscii(offset, "aeron:udp?endpoint=localhost:9010");
+        buffer.putStringAscii(offset, "aeron:udp?endpoint=localhost:10010");
 
         dissectPersistentSubscriptionStateChange(PERSISTENT_SUBSCRIPTION_STATE_CHANGE, buffer, 0, builder);
 
         assertEquals("[1.500000000] " + CONTEXT + ": " + PERSISTENT_SUBSCRIPTION_STATE_CHANGE.name() + " [10/20]:" +
                 " recordingId=16" +
+                " replayStreamId=10" +
+                " liveStreamId=11" +
                 " x -> y" +
                 " replayChannel=aeron:udp?endpoint=localhost:9010" +
                 " liveChannel=aeron:udp?endpoint=localhost:10010",

@@ -198,6 +198,8 @@ class ArchiveEventEncoderTest
     {
         final int offset = 24;
         final long recordingId = 16;
+        final int replayStreamId = 10;
+        final int liveStreamId = 11;
         final String replayChannel = "aeron:udp?endpoint=localhost:9010";
         final String liveChannel = "aeron:udp?endpoint=localhost:10010";
         final TimeUnit to = DAYS;
@@ -208,19 +210,27 @@ class ArchiveEventEncoderTest
         final int captureLength = captureLength(length);
 
         final int encodedLength = encodePersistentSubscriptionStateChange(
-            buffer, offset, captureLength, length, from, to, recordingId, replayChannel, liveChannel);
+            buffer, offset, captureLength, length, from, to, recordingId, replayStreamId, liveStreamId, replayChannel,
+            liveChannel);
+
+        int absoluteOffset = offset + LOG_HEADER_LENGTH;
 
         assertEquals(
             encodedLength(persistentSubscriptionStateChangeLength(from, to, replayChannel, liveChannel)),
             encodedLength);
         assertEquals(captureLength, buffer.getInt(offset, LITTLE_ENDIAN));
         assertEquals(length, buffer.getInt(offset + SIZE_OF_INT, LITTLE_ENDIAN));
-        assertEquals(
-            recordingId, buffer.getLong(offset + LOG_HEADER_LENGTH));
-        assertEquals(payload, buffer.getStringAscii(offset + LOG_HEADER_LENGTH + SIZE_OF_LONG));
-        assertEquals(replayChannel, buffer.getStringAscii(offset + LOG_HEADER_LENGTH + SIZE_OF_LONG +
-            payload.length() + SIZE_OF_INT));
-        assertEquals(liveChannel, buffer.getStringAscii(offset + LOG_HEADER_LENGTH + SIZE_OF_LONG +
-            payload.length() + SIZE_OF_INT + replayChannel.length() + SIZE_OF_INT));
+
+        assertEquals(recordingId, buffer.getLong(absoluteOffset));
+        absoluteOffset += SIZE_OF_LONG;
+        assertEquals(replayStreamId, buffer.getInt(absoluteOffset));
+        absoluteOffset += SIZE_OF_INT;
+        assertEquals(liveStreamId, buffer.getInt(absoluteOffset));
+        absoluteOffset += SIZE_OF_INT;
+        assertEquals(payload, buffer.getStringAscii(absoluteOffset));
+        absoluteOffset += payload.length() + SIZE_OF_INT;
+        assertEquals(replayChannel, buffer.getStringAscii(absoluteOffset));
+        absoluteOffset += replayChannel.length() + SIZE_OF_INT;
+        assertEquals(liveChannel, buffer.getStringAscii(absoluteOffset));
     }
 }

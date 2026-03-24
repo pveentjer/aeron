@@ -669,8 +669,20 @@ final class ArchiveEventDissector
 
         final long recordingId = buffer.getLong(absoluteOffset);
         absoluteOffset += SIZE_OF_LONG;
+        final long replayStreamId = buffer.getInt(absoluteOffset);
+        absoluteOffset += SIZE_OF_INT;
+        final long liveStreamId = buffer.getInt(absoluteOffset);
+        absoluteOffset += SIZE_OF_INT;
 
-        builder.append(": recordingId=").append(recordingId).append(" ");
+        builder
+            .append(": recordingId=")
+            .append(recordingId)
+            .append(" replayStreamId=")
+            .append(replayStreamId)
+            .append(" liveStreamId=")
+            .append(liveStreamId)
+            .append(" ");
+
         absoluteOffset += buffer.getStringAscii(absoluteOffset, builder, LITTLE_ENDIAN);
         absoluteOffset += SIZE_OF_INT;
 
