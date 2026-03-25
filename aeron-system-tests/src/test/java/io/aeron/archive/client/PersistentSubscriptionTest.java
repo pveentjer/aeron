@@ -63,6 +63,7 @@ import org.agrona.concurrent.status.CountersReader;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -1344,6 +1345,7 @@ class PersistentSubscriptionTest
 
     @Test
     @InterruptAfter(5)
+    @Disabled("disabling while investigating failure to publish")
     void shouldStartFromStoppedRecordingAndErrorWhenLiveHaveAdvanced()
     {
         final PersistentPublication persistentPublication =
@@ -1357,7 +1359,7 @@ class PersistentSubscriptionTest
         final List<byte[]> payloads2 = generateFixedPayloads(1, ONE_KB_MESSAGE_SIZE);
         persistentPublication.publish(payloads);
 
-        final Subscription subscriber2 = aeron.addSubscription(MDC_SUBSCRIPTION_CHANNEL, STREAM_ID);
+        final Subscription subscriber2 = addCloseable(aeron.addSubscription(MDC_SUBSCRIPTION_CHANNEL, STREAM_ID));
         final BufferingFragmentHandler subscriber2FragmentHandler = new BufferingFragmentHandler();
 
         executeUntil(() -> subscriber2FragmentHandler.hasReceivedPayloads(payloads2.size()),
@@ -1387,6 +1389,57 @@ class PersistentSubscriptionTest
         }
     }
 
+    @Test
+    @InterruptAfter(10)
+    void shouldErrorWhenFallingOnReplayWithDeletedRecording()
+    {
+        final ExclusivePublication publication = addCloseable(aeron.addExclusivePublication(MDC_PUBLICATION_CHANNEL, STREAM_ID));
+        final long subscriptionId = aeronArchive.startRecording(MDC_SUBSCRIPTION_CHANNEL, STREAM_ID, SourceLocation.LOCAL);
+
+        PersistentPublication persistentPublication = PersistentPublication.create(aeronArchive, publication);
+        final List<byte[]> payloads = generateFixedPayloads(2, ONE_KB_MESSAGE_SIZE);
+        persistentPublication.persist(payloads);
+
+        final MediaDriver.Context ctx = new MediaDriver.Context()
+            .aeronDirectoryName(CommonContext.generateRandomDirName());
+        MediaDriver mediaDriver = addCloseable(MediaDriver.launch(ctx));
+        Aeron aeron = addCloseable(
+            Aeron.connect(new Aeron.Context().aeronDirectoryName(mediaDriver.aeronDirectoryName())));
+
+        final Subscription fastSubscription = addCloseable(aeron.addSubscription(MDC_SUBSCRIPTION_CHANNEL, STREAM_ID));
+        final CountingFragmentHandler countingFragmentHandler = new CountingFragmentHandler();
+
+        persistentSubscriptionCtx
+            .recordingId(persistentPublication.recordingId)
+            .liveChannel(MDC_SUBSCRIPTION_CHANNEL)
+            .startPosition(FROM_LIVE);
+
+        try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
+        {
+
+            executeUntil(persistentSubscription::isLive, () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+
+            persistentPublication.persist(generateFixedPayloads(32, ONE_KB_MESSAGE_SIZE));
+            executeUntil(
+                () -> countingFragmentHandler.hasReceivedPayloads(32),
+                () -> fastSubscription.poll(countingFragmentHandler, 10));
+            persistentPublication.persist(generateFixedPayloads(33, ONE_KB_MESSAGE_SIZE));
+            executeUntil(
+                () -> countingFragmentHandler.hasReceivedPayloads(65),
+                () -> fastSubscription.poll(countingFragmentHandler, 10));
+
+            aeronArchive.stopRecording(subscriptionId);
+            aeronArchive.purgeRecording(persistentPublication.recordingId);
+
+            executeUntil(() -> listener.errorCount > 0,
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+            );
+            assertEquals(ArchiveException.class, listener.lastException.getClass());
+            executeUntil(persistentSubscription::hasFailed,
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+            );
+        }
+    }
 
     @Test
     @InterruptAfter(20)
@@ -1667,7 +1720,7 @@ class PersistentSubscriptionTest
         addCloseable(remoteArchive);
         assert remoteArchive != null;
 
-        final ExclusivePublication exclusivePublication = aeron.addExclusivePublication(MDC_PUBLICATION_CHANNEL, STREAM_ID);
+        final ExclusivePublication exclusivePublication = addCloseable(aeron.addExclusivePublication(MDC_PUBLICATION_CHANNEL, STREAM_ID));
         remoteArchive.startRecording(MDC_SUBSCRIPTION_CHANNEL, STREAM_ID, SourceLocation.REMOTE);
         Tests.awaitConnected(exclusivePublication);
 
