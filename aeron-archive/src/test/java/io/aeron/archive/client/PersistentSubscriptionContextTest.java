@@ -16,8 +16,10 @@
 package io.aeron.archive.client;
 
 import io.aeron.Aeron;
+import io.aeron.Counter;
 import io.aeron.exceptions.ConcurrentConcludeException;
 import io.aeron.exceptions.ConfigurationException;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -43,6 +45,10 @@ class PersistentSubscriptionContextTest
     void setup()
     {
         final Aeron aeron = mock(Aeron.class);
+        final CountersManager countersManager = Tests.newCountersManager(64 * 1024);
+
+        when(aeron.addCounter(anyInt(), any(), anyInt(), anyInt(), any(), anyInt(), anyInt()))
+            .then(CountersAnswer.mapTo(countersManager));
 
         context = new PersistentSubscription.Context()
             .recordingId(1)
@@ -230,5 +236,16 @@ class PersistentSubscriptionContextTest
             arguments(true, "aeron:ipc?control-mode=response", "aeron:ipc", "aeron:ipc"),
             arguments(true, "aeron:ipc?control-mode=response", "aeron:ipc", "aeron:ipc?control-mode=response")
         );
+    }
+
+    @Test
+    void contextShouldCreateStateCounterIfNoneProvided()
+    {
+        final Counter nullStateCounter = null;
+        context.stateCounter(nullStateCounter);
+        context.conclude();
+
+        assertNotSame(nullStateCounter, context.stateCounter());
+        assertNotNull(context.stateCounter());
     }
 }

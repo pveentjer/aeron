@@ -824,6 +824,12 @@ public final class AeronCounters
     @AeronCounter
     public static final int ARCHIVE_CONTROL_SESSION_TYPE_ID = 113;
 
+    /**
+     * The type id of the {@link Counter} used for tracking the state of a {@code PersistentSubscription}.
+     */
+    @AeronCounter
+    public static final int PERSISTENT_SUBSCRIPTION_STATE_TYPE_ID = 114;
+
     // Cluster counters
 
     /**
