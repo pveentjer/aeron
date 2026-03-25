@@ -1096,6 +1096,11 @@ public final class PersistentSubscription implements AutoCloseable
         {
             this.state = newState;
         }
+
+        if (state == State.LIVE)
+        {
+            logJoinedLive(liveImage.sessionId(), position);
+        }
     }
 
     private void logStateChange(
@@ -1108,6 +1113,10 @@ public final class PersistentSubscription implements AutoCloseable
         final String liveChannel)
     {
         System.out.println("State: " + oldState + " -> " + newState);
+    }
+
+    private void logJoinedLive(final int liveSessionId, final long joinPosition)
+    {
     }
 
     private int controlledPoll(
