@@ -69,6 +69,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -1389,9 +1390,19 @@ class PersistentSubscriptionTest
         }
     }
 
-    @Test
+    private enum ArchiveStoppedScenario
+    {
+        archive_stopped,
+        archive_stopped_and_recording_purged
+    }
+
+    @ParameterizedTest
     @InterruptAfter(10)
-    void shouldErrorWhenFallingOnReplayWithDeletedRecording()
+    @CsvSource({
+        "archive_stopped",
+        "archive_stopped_and_recording_purged"
+    })
+    void shouldErrorFallingOnReplayWhenLiveHaveAdvancedAfterArchiveHasStopped(ArchiveStoppedScenario scenario)
     {
         final ExclusivePublication publication = addCloseable(aeron.addExclusivePublication(MDC_PUBLICATION_CHANNEL, STREAM_ID));
         final long subscriptionId = aeronArchive.startRecording(MDC_SUBSCRIPTION_CHANNEL, STREAM_ID, SourceLocation.LOCAL);
@@ -1416,21 +1427,28 @@ class PersistentSubscriptionTest
 
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
-
             executeUntil(persistentSubscription::isLive, () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
 
             persistentPublication.persist(generateFixedPayloads(32, ONE_KB_MESSAGE_SIZE));
             executeUntil(
                 () -> countingFragmentHandler.hasReceivedPayloads(32),
                 () -> fastSubscription.poll(countingFragmentHandler, 10));
-            persistentPublication.persist(generateFixedPayloads(33, ONE_KB_MESSAGE_SIZE));
-            executeUntil(
-                () -> countingFragmentHandler.hasReceivedPayloads(65),
-                () -> fastSubscription.poll(countingFragmentHandler, 10));
 
-            aeronArchive.stopRecording(subscriptionId);
-            aeronArchive.purgeRecording(persistentPublication.recordingId);
+            switch (scenario)
+            {
+                case archive_stopped ->
+                    aeronArchive.stopRecording(subscriptionId);
+                case archive_stopped_and_recording_purged ->
+                {
+                    aeronArchive.stopRecording(subscriptionId);
+                    aeronArchive.purgeRecording(persistentPublication.recordingId);
+                }
+                default ->
+                    throw new IllegalArgumentException("Unknown scenario: " + scenario);
+            }
+            persistentPublication.publish(generateFixedPayloads(33, ONE_KB_MESSAGE_SIZE));
 
+            executeUntil(() -> countingFragmentHandler.hasReceivedPayloads(65), () -> fastSubscription.poll(countingFragmentHandler, 10));
             executeUntil(() -> listener.errorCount > 0,
                 () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
             );
