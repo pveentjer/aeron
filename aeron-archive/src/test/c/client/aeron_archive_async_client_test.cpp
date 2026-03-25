@@ -452,12 +452,16 @@ TEST_F(AeronArchiveAsyncClientTest, testAeronArchiveAsyncClient)
     aeron_archive_async_client_t *client;
     ASSERT_EQ(0, aeron_archive_async_client_create(&client, context, &listener.listener));
 
+    ASSERT_EQ(AERON_NULL_VALUE, aeron_archive_async_client_get_control_session_id(client));
+
     {
         TestArchive testArchive = createTestArchive(aeron_dir);
 
         ASSERT_FALSE(aeron_archive_async_client_is_connected(client));
         pollUntil<int>("is connected", client, [&] { return listener.connectedCount; }, [](const int x) { return x == 1; });
         ASSERT_TRUE(aeron_archive_async_client_is_connected(client));
+
+        ASSERT_NE(AERON_NULL_VALUE, aeron_archive_async_client_get_control_session_id(client));
 
         ASSERT_TRUE(aeron_archive_async_client_try_send_list_recording_request(client, 1, 10));
         auto controlResponse1 = pollUntilControlResponseReceived(client, listener, 1);
@@ -475,7 +479,7 @@ TEST_F(AeronArchiveAsyncClientTest, testAeronArchiveAsyncClient)
 
         aeron_archive_replay_params_t replay_params;
         aeron_archive_replay_params_init(&replay_params);
-        ASSERT_TRUE(aeron_archive_async_client_try_send_replay_request(client, 3, 12, "aeron:ipc", 2000, &replay_params));
+        ASSERT_TRUE(aeron_archive_async_client_try_send_replay_request(client, nullptr, 3, 12, "aeron:ipc", 2000, &replay_params));
         auto controlResponse3 = pollUntilControlResponseReceived(client, listener, 3);
         ASSERT_EQ(3, controlResponse3->correlation_id);
         ASSERT_EQ(ARCHIVE_ERROR_CODE_UNKNOWN_RECORDING, controlResponse3->relevant_id);
@@ -506,7 +510,7 @@ TEST_F(AeronArchiveAsyncClientTest, testAeronArchiveAsyncClient)
         ASSERT_LT(0, aeron_subscription_try_resolve_channel_endpoint_port(subscription, uri_buffer, sizeof(uri_buffer))) << aeron_errmsg();
 
         aeron_archive_replay_params_init(&replay_params);
-        ASSERT_TRUE(aeron_archive_async_client_try_send_replay_request(client, 6, recording_id, uri_buffer, 2000, &replay_params));
+        ASSERT_TRUE(aeron_archive_async_client_try_send_replay_request(client, nullptr, 6, recording_id, uri_buffer, 2000, &replay_params));
         auto controlResponse6 = pollUntilControlResponseReceived(client, listener, 6);
         ASSERT_EQ(6, controlResponse6->correlation_id);
         ASSERT_EQ(aeron_archive_client_controlResponseCode_OK, controlResponse6->code);
@@ -538,12 +542,15 @@ TEST_F(AeronArchiveAsyncClientTest, testAeronArchiveAsyncClient)
 
     ASSERT_FALSE(aeron_archive_async_client_is_connected(client));
     ASSERT_FALSE(aeron_archive_async_client_try_send_max_recorded_position_request(client, 7, recording_id));
+    ASSERT_EQ(AERON_NULL_VALUE, aeron_archive_async_client_get_control_session_id(client));
 
     {
         TestArchive testArchive = createTestArchive(aeron_dir);
 
         pollUntil<int>("is reconnected", client, [&] { return listener.connectedCount; }, [](const int x) { return x == 2; });
         ASSERT_TRUE(aeron_archive_async_client_is_connected(client));
+
+        ASSERT_NE(AERON_NULL_VALUE, aeron_archive_async_client_get_control_session_id(client));
 
         ASSERT_EQ(0, aeron_archive_async_client_destroy(client));
     }
@@ -581,7 +588,7 @@ TEST_F(AeronArchiveAsyncClientTest, shouldAllowToStopReplay)
 
     aeron_archive_replay_params_t replay_params;
     aeron_archive_replay_params_init(&replay_params);
-    ASSERT_TRUE(aeron_archive_async_client_try_send_replay_request(client, 1, 0, "aeron:ipc", 6000, &replay_params));
+    ASSERT_TRUE(aeron_archive_async_client_try_send_replay_request(client, nullptr, 1, 0, "aeron:ipc", 6000, &replay_params));
     auto replayResponse = pollUntilControlResponseReceived(client, listener, 1);
     ASSERT_EQ(1, replayResponse->correlation_id);
     ASSERT_EQ(aeron_archive_client_controlResponseCode_OK, replayResponse->code);
