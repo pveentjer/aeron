@@ -18,6 +18,7 @@
 #define AERON_AERON_ARCHIVE_ASYNC_CLIENT_H
 
 #include "aeron_archive.h"
+#include "aeron_archive_proxy.h"
 
 typedef struct aeron_archive_async_client_stct aeron_archive_async_client_t;
 
@@ -51,6 +52,8 @@ bool aeron_archive_async_client_is_connected(aeron_archive_async_client_t *clien
 
 bool aeron_archive_async_client_is_closed(aeron_archive_async_client_t *client);
 
+int64_t aeron_archive_async_client_get_control_session_id(aeron_archive_async_client_t *client);
+
 bool aeron_archive_async_client_try_send_list_recording_request(
     aeron_archive_async_client_t *client,
     int64_t correlation_id,
@@ -61,8 +64,14 @@ bool aeron_archive_async_client_try_send_max_recorded_position_request(
     int64_t correlation_id,
     int64_t recording_id);
 
+bool aeron_archive_async_client_try_send_replay_token_request(
+    aeron_archive_async_client_t *client,
+    int64_t correlation_id,
+    int64_t recording_id);
+
 bool aeron_archive_async_client_try_send_replay_request(
     aeron_archive_async_client_t *client,
+    aeron_archive_proxy_t *archive_proxy,
     int64_t correlation_id,
     int64_t recording_id,
     const char *replay_channel,

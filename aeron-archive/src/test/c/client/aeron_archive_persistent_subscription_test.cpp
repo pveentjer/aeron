@@ -38,6 +38,8 @@ static const std::string MDC_PUBLICATION_CHANNEL = "aeron:udp?control=localhost:
 static const std::string MDC_SUBSCRIPTION_CHANNEL = "aeron:udp?control=localhost:2000";
 static const std::string UNICAST_CHANNEL = "aeron:udp?endpoint=localhost:2000";
 static const std::string MULTICAST_CHANNEL = "aeron:udp?endpoint=224.0.1.1:40456|interface=localhost";
+static const std::string LOCALHOST_CONTROL_REQUEST_CHANNEL = "aeron:udp?endpoint=localhost:8010";
+static const std::string LOCALHOST_CONTROL_RESPONSE_CHANNEL = "aeron:udp?endpoint=localhost:0";
 static const int32_t STREAM_ID = 1000;
 static const int32_t ONE_KB_MESSAGE_SIZE = 1024 - AERON_DATA_HEADER_LENGTH;
 static const int32_t FLOW_CONTROL_RECEIVERS_COUNTER_TYPE_ID = 17;
@@ -98,8 +100,8 @@ public:
         aeron_archive_context_t *archive_ctx = nullptr;
         aeron_archive_context_init(&archive_ctx);
         aeron_archive_context_set_aeron_directory_name(archive_ctx, aeronDir.c_str());
-        aeron_archive_context_set_control_request_channel(archive_ctx, "aeron:udp?endpoint=localhost:8010");
-        aeron_archive_context_set_control_response_channel(archive_ctx, "aeron:udp?endpoint=localhost:0");
+        aeron_archive_context_set_control_request_channel(archive_ctx, LOCALHOST_CONTROL_REQUEST_CHANNEL.c_str());
+        aeron_archive_context_set_control_response_channel(archive_ctx, LOCALHOST_CONTROL_RESPONSE_CHANNEL.c_str());
         Credentials::defaultCredentials().configure(archive_ctx);
 
         aeron_archive_t *archive = nullptr;
@@ -295,7 +297,7 @@ protected:
             aeronDir,
             ARCHIVE_DIR,
             std::cout,
-            "aeron:udp?endpoint=localhost:8010",
+            LOCALHOST_CONTROL_REQUEST_CHANNEL,
             "aeron:udp?endpoint=localhost:0",
             1
         };
@@ -305,8 +307,8 @@ protected:
     {
         aeron_archive_context_t *ctx;
         aeron_archive_context_init(&ctx);
-        aeron_archive_context_set_control_request_channel(ctx, "aeron:udp?endpoint=localhost:8010");
-        aeron_archive_context_set_control_response_channel(ctx, "aeron:udp?endpoint=localhost:0");
+        aeron_archive_context_set_control_request_channel(ctx, LOCALHOST_CONTROL_REQUEST_CHANNEL.c_str());
+        aeron_archive_context_set_control_response_channel(ctx, LOCALHOST_CONTROL_RESPONSE_CHANNEL.c_str());
         Credentials::defaultCredentials().configure(ctx);
         return ctx;
     }
@@ -1600,6 +1602,8 @@ struct ReplayChannelAndStream
 {
     std::string replay_channel;
     int32_t replay_stream_id;
+    std::string archive_control_request_channel;
+    std::string archive_control_response_channel;
 };
 
 class AeronArchivePersistentSubscriptionReplayOverConfiguredChannelTest
@@ -1612,9 +1616,14 @@ INSTANTIATE_TEST_SUITE_P(
     ,
     AeronArchivePersistentSubscriptionReplayOverConfiguredChannelTest,
     testing::Values(
-        ReplayChannelAndStream{"aeron:udp?endpoint=localhost:0", -10},
-        ReplayChannelAndStream{"aeron:udp?endpoint=localhost:10001", -11},
-        ReplayChannelAndStream{"aeron:ipc", -12}));
+        ReplayChannelAndStream{"aeron:udp?endpoint=localhost:0", -10, LOCALHOST_CONTROL_REQUEST_CHANNEL, LOCALHOST_CONTROL_RESPONSE_CHANNEL},
+        ReplayChannelAndStream{"aeron:udp?endpoint=localhost:10001", -11, LOCALHOST_CONTROL_REQUEST_CHANNEL, LOCALHOST_CONTROL_RESPONSE_CHANNEL},
+        ReplayChannelAndStream{"aeron:ipc", -12, LOCALHOST_CONTROL_REQUEST_CHANNEL, LOCALHOST_CONTROL_RESPONSE_CHANNEL},
+        ReplayChannelAndStream{"aeron:udp?control=localhost:10001|control-mode=response", -11, LOCALHOST_CONTROL_REQUEST_CHANNEL, "aeron:udp?control-mode=response|control=localhost:10002"},
+        ReplayChannelAndStream{"aeron:udp?control=localhost:10001|control-mode=response|endpoint=localhost:5006", -11, LOCALHOST_CONTROL_REQUEST_CHANNEL, "aeron:udp?control-mode=response|control=localhost:10002"},
+        ReplayChannelAndStream{"aeron:udp?control=localhost:10001|control-mode=response|endpoint=localhost:0", -11, LOCALHOST_CONTROL_REQUEST_CHANNEL, "aeron:udp?control-mode=response|control=localhost:10002"},
+        ReplayChannelAndStream{"aeron:ipc?control-mode=response", -11, "aeron:ipc", "aeron:ipc?control-mode=response"}
+    ));
 
 TEST_P(AeronArchivePersistentSubscriptionReplayOverConfiguredChannelTest, shouldReplayOverConfiguredChannel)
 {
@@ -1622,6 +1631,8 @@ TEST_P(AeronArchivePersistentSubscriptionReplayOverConfiguredChannelTest, should
 
     const std::string& replay_channel = GetParam().replay_channel;
     const int32_t replay_stream_id = GetParam().replay_stream_id;
+    const std::string& archive_control_request_channel = GetParam().archive_control_request_channel;
+    const std::string& archive_control_response_channel = GetParam().archive_control_response_channel;
 
     PersistentPublication persistent_publication(m_aeronDir, IPC_CHANNEL, STREAM_ID);
 
@@ -1630,9 +1641,13 @@ TEST_P(AeronArchivePersistentSubscriptionReplayOverConfiguredChannelTest, should
 
     AeronResource aeron(m_aeronDir);
 
+    const auto archive_context = createArchiveContext();
+    aeron_archive_context_set_control_request_channel(archive_context, archive_control_request_channel.c_str());
+    aeron_archive_context_set_control_response_channel(archive_context, archive_control_response_channel.c_str());
+
     aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
         aeron.aeron(),
-        createArchiveContext(),
+        archive_context,
         persistent_publication.recordingId());
 
     aeron_archive_persistent_subscription_context_set_replay_channel(context, replay_channel.c_str());
@@ -1879,7 +1894,6 @@ TEST_P(AeronArchivePersistentSubscriptionCatchupTest, shouldCatchupOnReplayBefor
 
     ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
 }
-
 
 TEST_F(AeronArchivePersistentSubscriptionTest, shouldHandleReplayBeingAheadOfLive)
 {
