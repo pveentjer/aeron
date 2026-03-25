@@ -104,7 +104,6 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
@@ -322,6 +321,29 @@ class PersistentSubscriptionTest
                 Reason.INVALID_START_POSITION,
                 ((PersistentSubscriptionException)listener.lastException).reason()
             );
+        }
+    }
+
+    @InterruptAfter(5)
+    @Test
+    void shouldErrorWhenStartPositionDoesNotAlignWithFrame()
+    {
+        final PersistentPublication persistentPublication = PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
+        final List<byte[]> payloads = generateFixedPayloads(2, ONE_KB_MESSAGE_SIZE);
+        persistentPublication.persist(payloads);
+
+        persistentSubscriptionCtx
+            .recordingId(persistentPublication.recordingId)
+            .startPosition(ONE_KB_MESSAGE_SIZE - 32)
+            .liveChannel(MDC_SUBSCRIPTION_CHANNEL);
+
+        systemTestWatcher.ignoreErrorsMatching((log) -> log.contains("does not point to a valid frame"));
+
+        try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
+        {
+            executeUntil(() -> listener.errorCount > 0, () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+            assertEquals(ArchiveException.class, listener.lastException.getClass());
+            assertTrue(persistentSubscription.hasFailed());
         }
     }
 
@@ -1236,6 +1258,45 @@ class PersistentSubscriptionTest
             executeUntil( persistentSubscription::isLive, () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
         }
     }
+
+
+    @InterruptAfter(5)
+    @Test
+    void shouldFailWhenLivePublicationIsRevoked()
+    {
+        final ExclusivePublication publication = addCloseable(aeron.addExclusivePublication(MDC_PUBLICATION_CHANNEL, STREAM_ID));
+        aeronArchive.startRecording(MDC_PUBLICATION_CHANNEL, STREAM_ID, SourceLocation.LOCAL);
+
+        final PersistentPublication persistentPublication = PersistentPublication.create(aeronArchive, publication);
+        final List<byte[]> payloads = generateFixedPayloads(2, ONE_KB_MESSAGE_SIZE);
+        persistentPublication.persist(payloads);
+
+        final Subscription subscription = addCloseable(aeron.addSubscription(MDC_SUBSCRIPTION_CHANNEL, STREAM_ID));
+
+        persistentSubscriptionCtx
+            .aeronArchiveContext(aeronArchiveContext.clone()
+                .messageTimeoutNs(TimeUnit.SECONDS.toNanos(3)))
+            .recordingId(persistentPublication.recordingId)
+            .startPosition(FROM_START)
+            .liveChannel(MDC_SUBSCRIPTION_CHANNEL);
+
+        try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
+        {
+            executeUntil(persistentSubscription::isLive, () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+
+            Tests.await(subscription::isConnected);
+            Tests.await(() -> subscription.imageCount() > 0);
+            publication.revoke();
+            Tests.await(publication::isClosed);
+            Tests.await(() -> subscription.imageCount() == 0);
+            subscription.close();
+
+            executeUntil(() -> listener.errorCount > 0, () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+            assertEquals(ArchiveException.class, listener.lastException.getClass());
+            assertTrue(persistentSubscription.hasFailed());
+        }
+    }
+
 
     @Test
     @InterruptAfter(5)
