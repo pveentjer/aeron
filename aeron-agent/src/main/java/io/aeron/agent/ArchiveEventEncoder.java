@@ -91,6 +91,25 @@ final class ArchiveEventEncoder
         return encodedLength;
     }
 
+    static int encodePersistentSubscriptionJoinedLive(
+        final UnsafeBuffer encodingBuffer,
+        final int offset,
+        final int captureLength,
+        final int length,
+        final int liveSessionId,
+        final long joinPosition)
+    {
+        int encodedLength = encodeLogHeader(encodingBuffer, offset, captureLength, length);
+
+        encodingBuffer.putInt(offset + encodedLength, liveSessionId, LITTLE_ENDIAN);
+        encodedLength += SIZE_OF_INT;
+
+        encodingBuffer.putLong(offset + encodedLength, joinPosition, LITTLE_ENDIAN);
+        encodedLength += SIZE_OF_LONG;
+
+        return encodedLength;
+    }
+
     static <E extends Enum<E>> int replaySessionStateChangeLength(final E from, final E to, final String reason)
     {
         return stateTransitionStringLength(from, to) + (3 * SIZE_OF_LONG) + (SIZE_OF_INT + reason.length());

@@ -147,4 +147,14 @@ class ArchiveInterceptor
         }
     }
 
+    static class PersistentSubscriptionJoinedLive
+    {
+        @Advice.OnMethodEnter
+        static void logJoinedLive(
+            final int liveSessionId,
+            final long joinPosition)
+        {
+            LOGGER.logPersistentSubscriptionJoinedLive(liveSessionId, joinPosition);
+        }
+    }
 }

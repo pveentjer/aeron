@@ -657,8 +657,7 @@ final class ArchiveEventDissector
         builder.append(": ").append(catalogLength).append(" bytes => ").append(newCatalogLength).append(" bytes");
     }
 
-
-    public static void dissectPersistentSubscriptionStateChange(
+    static void dissectPersistentSubscriptionStateChange(
         final ArchiveEventCode eventCode,
         final MutableDirectBuffer buffer,
         final int offset,
@@ -692,6 +691,26 @@ final class ArchiveEventDissector
 
         builder.append(" liveChannel=");
         buffer.getStringAscii(absoluteOffset, builder, LITTLE_ENDIAN);
+    }
+
+    static void dissectPersistentSubscriptionJoinedLive(
+        final ArchiveEventCode eventCode,
+        final MutableDirectBuffer buffer,
+        final int offset,
+        final StringBuilder builder)
+    {
+        int absoluteOffset = offset;
+        absoluteOffset += dissectLogHeader(CONTEXT, eventCode, buffer, absoluteOffset, builder);
+
+        final long liveSessionId = buffer.getInt(absoluteOffset);
+        absoluteOffset += SIZE_OF_INT;
+        final long joinPosition = buffer.getLong(absoluteOffset);
+
+        builder
+            .append(": liveSessionId=")
+            .append(liveSessionId)
+            .append(" joinPosition=")
+            .append(joinPosition);
     }
 
     private static void appendConnect(final StringBuilder builder)

@@ -34,6 +34,7 @@ import static io.aeron.agent.ArchiveEventCode.CATALOG_RESIZE;
 import static io.aeron.agent.ArchiveEventCode.CMD_IN_MAX_RECORDED_POSITION;
 import static io.aeron.agent.ArchiveEventCode.CMD_OUT_RESPONSE;
 import static io.aeron.agent.ArchiveEventCode.CONTROL_SESSION_STATE_CHANGE;
+import static io.aeron.agent.ArchiveEventCode.PERSISTENT_SUBSCRIPTION_JOINED_LIVE;
 import static io.aeron.agent.ArchiveEventCode.PERSISTENT_SUBSCRIPTION_STATE_CHANGE;
 import static io.aeron.agent.ArchiveEventCode.RECORDING_SIGNAL;
 import static io.aeron.agent.ArchiveEventCode.REPLAY_SESSION_ERROR;
@@ -89,7 +90,7 @@ class ArchiveEventLoggerTest
             "CMD_OUT_RESPONSE", "REPLICATION_SESSION_STATE_CHANGE",
             "CONTROL_SESSION_STATE_CHANGE", "REPLAY_SESSION_ERROR", "CATALOG_RESIZE",
             "REPLICATION_SESSION_DONE", "REPLAY_SESSION_STATE_CHANGE", "RECORDING_SESSION_STATE_CHANGE",
-            "PERSISTENT_SUBSCRIPTION_STATE_CHANGE"
+            "PERSISTENT_SUBSCRIPTION_STATE_CHANGE", "PERSISTENT_SUBSCRIPTION_JOINED_LIVE"
         })
     void logControlRequest(final ArchiveEventCode eventCode)
     {
@@ -425,5 +426,25 @@ class ArchiveEventLoggerTest
         assertEquals(replayChannel, logBuffer.getStringAscii(encodedMsgOffset(absoluteOffset)));
         absoluteOffset += replayChannel.length() + SIZE_OF_INT;
         assertEquals(liveChannel, logBuffer.getStringAscii(encodedMsgOffset(absoluteOffset)));
+    }
+
+    @Test
+    void logPersistentSubscriptionJoinedLive()
+    {
+        final int offset = ALIGNMENT * 4;
+        logBuffer.putLong(CAPACITY + TAIL_POSITION_OFFSET, offset);
+        final int liveSessionId = 555;
+        final long joinPosition = 10L;
+        final int captureLength = SIZE_OF_INT + SIZE_OF_LONG;
+
+        logger.logPersistentSubscriptionJoinedLive(liveSessionId, joinPosition);
+
+        int absoluteOffset = offset + LOG_HEADER_LENGTH;
+
+        verifyLogHeader(
+            logBuffer, offset, PERSISTENT_SUBSCRIPTION_JOINED_LIVE.toEventCodeId(), captureLength, captureLength);
+        assertEquals(liveSessionId, logBuffer.getInt(encodedMsgOffset(absoluteOffset), LITTLE_ENDIAN));
+        absoluteOffset += SIZE_OF_INT;
+        assertEquals(joinPosition, logBuffer.getLong(encodedMsgOffset(absoluteOffset), LITTLE_ENDIAN));
     }
 }
