@@ -1360,6 +1360,22 @@ public final class PersistentSubscription implements AutoCloseable
                 throw new ConfigurationException("invalid startPosition " + startPosition);
             }
 
+            final ChannelUri replayChannelUri = ChannelUri.parse(replayChannel);
+
+            if (replayChannelUri.hasControlModeResponse())
+            {
+                final String controlRequestChannel = aeronArchiveContext.controlRequestChannel();
+                if (controlRequestChannel != null && !replayChannelUri.isIpc() == ChannelUri.parse(controlRequestChannel)
+                    .isIpc())
+                {
+                    throw new ConfigurationException(
+                        "Channel media type mismatch. " +
+                            "When using `control-mode=response`, the `replayChannel` media type must match the media" +
+                            " type for the archive control channel."
+                    );
+                }
+            }
+
             if (aeron == null)
             {
                 final Aeron.Context aeronCtx = new Aeron.Context()
