@@ -991,4 +991,20 @@ class ArchiveEventDissectorTest
                 " liveChannel=aeron:udp?endpoint=localhost:10010",
             builder.toString());
     }
+
+    @Test
+    void persistentSubscriptionJoinedLive()
+    {
+        int offset = internalEncodeLogHeader(buffer, 0, 10, 20, () -> 1_500_000_000L);
+        buffer.putInt(offset, 21);
+        offset += SIZE_OF_INT;
+        buffer.putLong(offset, 10);
+
+        dissectPersistentSubscriptionJoinedLive(PERSISTENT_SUBSCRIPTION_JOINED_LIVE, buffer, 0, builder);
+
+        assertEquals("[1.500000000] " + CONTEXT + ": " + PERSISTENT_SUBSCRIPTION_JOINED_LIVE.name() + " [10/20]:" +
+                " liveSessionId=21" +
+                " joinPosition=10",
+            builder.toString());
+    }
 }

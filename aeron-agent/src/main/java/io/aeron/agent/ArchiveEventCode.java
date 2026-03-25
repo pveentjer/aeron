@@ -15,6 +15,7 @@
  */
 package io.aeron.agent;
 
+import io.aeron.archive.client.PersistentSubscription;
 import io.aeron.archive.codecs.*;
 import org.agrona.MutableDirectBuffer;
 
@@ -235,8 +236,14 @@ public enum ArchiveEventCode implements EventCode
      */
     CMD_IN_MAX_RECORDED_POSITION(
         45, MaxRecordedPositionRequestDecoder.TEMPLATE_ID, ArchiveEventDissector::dissectControlRequest),
-    PERSISTENT_SUBSCRIPTION_STATE_CHANGE(
-        46, -1, ArchiveEventDissector::dissectPersistentSubscriptionStateChange);
+    /**
+     * Archive logging event for {@link PersistentSubscription} state change.
+     */
+    PERSISTENT_SUBSCRIPTION_STATE_CHANGE(46, -1, ArchiveEventDissector::dissectPersistentSubscriptionStateChange),
+    /**
+     * Archive logging event for {@link PersistentSubscription} joining live.
+     */
+    PERSISTENT_SUBSCRIPTION_JOINED_LIVE(47, -1, ArchiveEventDissector::dissectPersistentSubscriptionJoinedLive);
 
     static final int EVENT_CODE_TYPE = EventCodeType.ARCHIVE.getTypeCode();
     private static final ArchiveEventCode[] EVENT_CODE_BY_ID;

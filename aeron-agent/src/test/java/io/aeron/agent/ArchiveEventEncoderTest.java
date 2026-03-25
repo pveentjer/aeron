@@ -233,4 +233,28 @@ class ArchiveEventEncoderTest
         absoluteOffset += replayChannel.length() + SIZE_OF_INT;
         assertEquals(liveChannel, buffer.getStringAscii(absoluteOffset));
     }
+
+    @Test
+    void testEncodePersistentSubscriptionJoinedLive()
+    {
+        final int offset = 24;
+        final int liveSessionId = 21;
+        final long joinPosition = 10;
+
+        final int length = SIZE_OF_INT + SIZE_OF_LONG;
+        final int captureLength = captureLength(length);
+
+        final int encodedLength = encodePersistentSubscriptionJoinedLive(
+            buffer, offset, captureLength, length, liveSessionId, joinPosition);
+
+        int absoluteOffset = offset + LOG_HEADER_LENGTH;
+
+        assertEquals(encodedLength(length), encodedLength);
+        assertEquals(captureLength, buffer.getInt(offset, LITTLE_ENDIAN));
+        assertEquals(length, buffer.getInt(offset + SIZE_OF_INT, LITTLE_ENDIAN));
+
+        assertEquals(liveSessionId, buffer.getInt(absoluteOffset));
+        absoluteOffset += SIZE_OF_INT;
+        assertEquals(joinPosition, buffer.getLong(absoluteOffset));
+    }
 }
