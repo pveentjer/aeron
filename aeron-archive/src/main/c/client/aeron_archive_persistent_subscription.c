@@ -21,12 +21,15 @@
 #include "aeron_alloc.h"
 #include "aeron_archive_async_client.h"
 #include "aeron_archive_persistent_subscription.h"
+#include "aeron_archive_context.h"
 #include "aeron_fragment_assembler.h"
+#include "aeron_subscription.h"
 #include "uri/aeron_uri_string_builder.h"
 #include "util/aeron_error.h"
 
 #define transition(persistent_subscription, new_state) \
     do {                                               \
+        printf("-> " #new_state "\n");fflush(stdout);  \
         persistent_subscription->state = new_state;    \
     } while (0)
 
@@ -119,6 +122,7 @@ typedef enum aeron_archive_replay_channel_type_en
 {
     REPLAY_CHANNEL_SESSION_SPECIFIC,
     REPLAY_CHANNEL_DYNAMIC_PORT,
+    REPLAY_CHANNEL_RESPONSE_CHANNEL,
 }
 aeron_archive_replay_channel_type_t;
 
@@ -132,6 +136,10 @@ typedef enum aeron_archive_persistent_subscription_state_en
     ADD_REPLAY_SUBSCRIPTION,
     AWAIT_REPLAY_SUBSCRIPTION,
     AWAIT_REPLAY_CHANNEL_ENDPOINT,
+    ADD_REQUEST_PUBLICATION,
+    AWAIT_REQUEST_PUBLICATION,
+    SEND_REPLAY_TOKEN_REQUEST,
+    AWAIT_REPLAY_TOKEN,
     REPLAY,
     ATTEMPT_SWITCH,
     ADD_LIVE_SUBSCRIPTION,
@@ -151,9 +159,11 @@ struct aeron_archive_persistent_subscription_stct
     aeron_archive_persistent_subscription_state_t state;
     aeron_archive_replay_channel_type_t replay_channel_type;
     char replay_channel_uri[AERON_URI_MAX_LENGTH];
+    bool replay_channel_is_ipc;
     struct list_recording_request list_recording_request;
     struct max_recorded_position max_recorded_position;
     struct async_archive_op replay_request;
+    struct async_archive_op replay_token_request;
     int64_t replay_session_id;
     int64_t replay_image_deadline_ns;
     int64_t join_error;
@@ -168,6 +178,10 @@ struct aeron_archive_persistent_subscription_stct
     aeron_image_controlled_fragment_assembler_t *assembler;
     int64_t next_live_position;
     int64_t position;
+    aeron_async_add_exclusive_publication_t *add_request_publication;
+    aeron_exclusive_publication_t *request_publication;
+    int64_t replay_token;
+    aeron_archive_proxy_t *response_channel_archive_proxy;
 };
 
 int aeron_archive_persistent_subscription_context_init(aeron_archive_persistent_subscription_context_t **context)
@@ -405,6 +419,15 @@ static int aeron_archive_persistent_subscription_context_conclude(
     return 0;
 }
 
+static void fire_on_error_with_aeron_err(aeron_archive_persistent_subscription_t *persistent_subscription)
+{
+    aeron_archive_persistent_subscription_listener_t *listener = &persistent_subscription->listener;
+    if (NULL != listener->on_error)
+    {
+        listener->on_error(listener->clientd, aeron_errcode(), aeron_errmsg());
+    }
+}
+
 static bool max_recorded_position_request_max_position(aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     int64_t correlation_id = aeron_next_correlation_id(persistent_subscription->context->aeron);
@@ -503,6 +526,28 @@ static bool max_recorded_position_caught_up(
     return false;
 }
 
+static void clean_up_request_publication(aeron_archive_persistent_subscription_t *persistent_subscription)
+{
+    if (NULL != persistent_subscription->add_request_publication)
+    {
+        // TODO how to close this?
+    }
+
+    if (NULL != persistent_subscription->request_publication)
+    {
+        aeron_exclusive_publication_close(persistent_subscription->request_publication, NULL, NULL);
+    }
+
+    if (NULL != persistent_subscription->response_channel_archive_proxy)
+    {
+        aeron_archive_proxy_delete(persistent_subscription->response_channel_archive_proxy);
+    }
+
+    persistent_subscription->add_request_publication = NULL;
+    persistent_subscription->request_publication = NULL;
+    persistent_subscription->response_channel_archive_proxy = NULL;
+}
+
 static void clean_up_replay(aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     if (AERON_NULL_VALUE != persistent_subscription->replay_session_id)
@@ -587,6 +632,7 @@ static void on_archive_disconnected(void *clientd)
     }
 
     clean_up_live_subscription(persistent_subscription);
+    clean_up_request_publication(persistent_subscription);
     clean_up_replay(persistent_subscription);
     clean_up_replay_subscription(persistent_subscription);
 
@@ -616,6 +662,11 @@ static void on_archive_control_response(
     {
         async_archive_op_on_control_response(
             &persistent_subscription->replay_request, relevant_id, code, error_message);
+    }
+    else if (correlation_id == persistent_subscription->replay_token_request.correlation_id)
+    {
+        async_archive_op_on_control_response(
+            &persistent_subscription->replay_token_request, relevant_id, code, error_message);
     }
 }
 
@@ -723,8 +774,15 @@ int aeron_archive_persistent_subscription_create(
 
         const char *media = aeron_uri_string_builder_get(&builder, AERON_URI_STRING_BUILDER_MEDIA_KEY);
         const char *endpoint = aeron_uri_string_builder_get(&builder, AERON_UDP_CHANNEL_ENDPOINT_KEY);
+        const char *control_mode = aeron_uri_string_builder_get(&builder, AERON_UDP_CHANNEL_CONTROL_MODE_KEY);
 
-        if (media != NULL && strcmp(media, "udp") == 0 &&
+        _persistent_subscription->replay_channel_is_ipc = media != NULL && strcmp(media, "ipc") == 0;
+
+        if (control_mode != NULL && strcmp(control_mode, AERON_UDP_CHANNEL_CONTROL_MODE_RESPONSE_VALUE) == 0)
+        {
+            _persistent_subscription->replay_channel_type = REPLAY_CHANNEL_RESPONSE_CHANNEL;
+        }
+        else if (media != NULL && strcmp(media, "udp") == 0 &&
             endpoint != NULL && strlen(endpoint) >= 2 &&
             strcmp(endpoint + strlen(endpoint) - 2, ":0") == 0)
         {
@@ -759,6 +817,7 @@ int aeron_archive_persistent_subscription_close(aeron_archive_persistent_subscri
     if (NULL != persistent_subscription)
     {
         clean_up_live_subscription(persistent_subscription);
+        clean_up_request_publication(persistent_subscription);
         clean_up_replay(persistent_subscription);
         clean_up_replay_subscription(persistent_subscription);
         aeron_archive_async_client_destroy(persistent_subscription->archive);
@@ -817,13 +876,13 @@ static void set_up_replay(aeron_archive_persistent_subscription_t *persistent_su
 
     persistent_subscription->join_error = INT64_MIN;
 
-    if (persistent_subscription->replay_channel_type == REPLAY_CHANNEL_DYNAMIC_PORT)
+    if (persistent_subscription->replay_channel_type == REPLAY_CHANNEL_SESSION_SPECIFIC)
     {
-        transition(persistent_subscription, ADD_REPLAY_SUBSCRIPTION);
+        transition(persistent_subscription, SEND_REPLAY_REQUEST);
     }
     else
     {
-        transition(persistent_subscription, SEND_REPLAY_REQUEST);
+        transition(persistent_subscription, ADD_REPLAY_SUBSCRIPTION);
     }
 }
 
@@ -950,8 +1009,16 @@ static int send_replay_request(aeron_archive_persistent_subscription_t *persiste
     aeron_archive_replay_params_init(&params);
     params.position = persistent_subscription->position;
 
+    aeron_archive_proxy_t *archive_proxy = NULL;
+    if (persistent_subscription->replay_channel_type == REPLAY_CHANNEL_RESPONSE_CHANNEL)
+    {
+        archive_proxy = persistent_subscription->response_channel_archive_proxy;
+        params.replay_token = persistent_subscription->replay_token;
+    }
+
     if (!aeron_archive_async_client_try_send_replay_request(
         persistent_subscription->archive,
+        archive_proxy,
         correlation_id,
         persistent_subscription->context->recording_id,
         persistent_subscription->replay_channel_uri,
@@ -963,6 +1030,7 @@ static int send_replay_request(aeron_archive_persistent_subscription_t *persiste
             return 0;
         }
 
+        clean_up_request_publication(persistent_subscription);
         clean_up_replay_subscription(persistent_subscription);
         transition(persistent_subscription, AWAIT_ARCHIVE_CONNECTION);
 
@@ -983,9 +1051,11 @@ static int await_replay_response(aeron_archive_persistent_subscription_t *persis
     {
         if (aeron_nano_clock() - persistent_subscription->replay_request.deadline_ns >= 0)
         {
+            clean_up_request_publication(persistent_subscription);
+            clean_up_replay_subscription(persistent_subscription);
+
             if (aeron_archive_async_client_is_connected(persistent_subscription->archive))
             {
-                clean_up_replay_subscription(persistent_subscription);
                 set_up_replay(persistent_subscription);
             }
             else
@@ -1003,6 +1073,7 @@ static int await_replay_response(aeron_archive_persistent_subscription_t *persis
     {
         transition(persistent_subscription, FAILED);
 
+        clean_up_request_publication(persistent_subscription);
         clean_up_replay_subscription(persistent_subscription);
 
         if (NULL != persistent_subscription->listener.on_error)
@@ -1049,6 +1120,8 @@ static int await_replay_response(aeron_archive_persistent_subscription_t *persis
     }
     else
     {
+        clean_up_request_publication(persistent_subscription);
+
         persistent_subscription->replay_image_deadline_ns =
             aeron_nano_clock() + persistent_subscription->message_timeout_ns;
 
@@ -1062,9 +1135,9 @@ static int add_replay_subscription(aeron_archive_persistent_subscription_t *pers
 {
     // Dynamic port: use the raw context channel (with :0) so the OS assigns a free port.
     // Session-specific: use replay_channel_uri which now has the session id injected.
-    const char *channel = persistent_subscription->replay_channel_type == REPLAY_CHANNEL_DYNAMIC_PORT
-        ? persistent_subscription->context->replay_channel
-        : persistent_subscription->replay_channel_uri;
+    const char *channel = persistent_subscription->replay_channel_type == REPLAY_CHANNEL_SESSION_SPECIFIC
+        ? persistent_subscription->replay_channel_uri
+        : persistent_subscription->context->replay_channel;
 
     if (aeron_async_add_subscription(
         &persistent_subscription->add_replay_subscription,
@@ -1103,7 +1176,7 @@ static int await_replay_subscription(aeron_archive_persistent_subscription_t *pe
         int errcode = aeron_errcode();
         persistent_subscription->add_replay_subscription = NULL;
 
-        if (errcode == ENOTCONN)
+        if (errcode == ENOTCONN) // TODO ENOTCONN???
         {
             clean_up_replay(persistent_subscription);
             set_up_replay(persistent_subscription);
@@ -1140,9 +1213,13 @@ static int await_replay_subscription(aeron_archive_persistent_subscription_t *pe
     {
         transition(persistent_subscription, REPLAY);
     }
-    else
+    else if (persistent_subscription->replay_channel_type == REPLAY_CHANNEL_DYNAMIC_PORT)
     {
         transition(persistent_subscription, AWAIT_REPLAY_CHANNEL_ENDPOINT);
+    }
+    else
+    {
+        transition(persistent_subscription, ADD_REQUEST_PUBLICATION);
     }
 
     return 1;
@@ -1160,6 +1237,196 @@ static int await_replay_channel_endpoint(aeron_archive_persistent_subscription_t
     }
 
     transition(persistent_subscription, SEND_REPLAY_REQUEST);
+
+    return 1;
+}
+
+static int add_request_publication(aeron_archive_persistent_subscription_t *persistent_subscription)
+{
+    char *control_request_channel = persistent_subscription->context->archive_context->control_request_channel;
+    int32_t stream_id = persistent_subscription->context->archive_context->control_request_stream_id;
+    int32_t term_buffer_length = (int32_t)persistent_subscription->context->archive_context->control_term_buffer_length;
+    int64_t subscription_id = persistent_subscription->replay_subscription->registration_id;
+
+    aeron_uri_string_builder_t builder;
+    char channel[AERON_URI_MAX_LENGTH];
+
+    bool failed = aeron_uri_string_builder_init_on_string(&builder, control_request_channel) < 0 ||
+        aeron_uri_string_builder_put(&builder, AERON_URI_SESSION_ID_KEY, NULL) < 0 ||
+        aeron_uri_string_builder_put_int64(&builder, AERON_URI_RESPONSE_CORRELATION_ID_KEY, subscription_id) < 0 ||
+        aeron_uri_string_builder_put(&builder, AERON_URI_INITIAL_TERM_ID_KEY, NULL) < 0 ||
+        aeron_uri_string_builder_put(&builder, AERON_URI_TERM_ID_KEY, NULL) < 0 ||
+        aeron_uri_string_builder_put(&builder, AERON_URI_TERM_OFFSET_KEY, NULL) < 0 ||
+        aeron_uri_string_builder_put_int32(&builder, AERON_URI_TERM_LENGTH_KEY, term_buffer_length) < 0 ||
+        aeron_uri_string_builder_put(&builder, AERON_URI_SPIES_SIMULATE_CONNECTION_KEY, "false") < 0 ||
+        aeron_uri_string_builder_sprint(&builder, channel, sizeof(channel)) < 0;
+
+    aeron_uri_string_builder_close(&builder);
+
+    if (failed)
+    {
+        AERON_APPEND_ERR("%s", "failed to build request publication channel");
+        goto error;
+    }
+
+    if (aeron_async_add_exclusive_publication(
+        &persistent_subscription->add_request_publication,
+        persistent_subscription->context->aeron,
+        channel,
+        stream_id) < 0)
+    {
+        AERON_APPEND_ERR("%s", "failed to add request publication");
+        goto error;
+    }
+
+    transition(persistent_subscription, AWAIT_REQUEST_PUBLICATION);
+    return 1;
+
+error:
+    transition(persistent_subscription, FAILED);
+    fire_on_error_with_aeron_err(persistent_subscription);
+    return 1;
+}
+
+static int await_request_publication(aeron_archive_persistent_subscription_t *persistent_subscription)
+{
+    int result = aeron_async_add_exclusive_publication_poll(
+        &persistent_subscription->request_publication,
+        persistent_subscription->add_request_publication);
+
+    if (result == 0)
+    {
+        return 0;
+    }
+
+    persistent_subscription->add_request_publication = NULL;
+
+    if (result < 0)
+    {
+        int errcode = aeron_errcode();
+
+        clean_up_replay_subscription(persistent_subscription);
+
+        if (-AERON_ERROR_CODE_RESOURCE_TEMPORARILY_UNAVAILABLE == errcode)
+        {
+            set_up_replay(persistent_subscription);
+        }
+        else
+        {
+            transition(persistent_subscription, FAILED);
+        }
+
+        AERON_APPEND_ERR("%s", "failed to add request publication");
+        fire_on_error_with_aeron_err(persistent_subscription);
+        return 1;
+    }
+
+    if (aeron_archive_proxy_create(
+        &persistent_subscription->response_channel_archive_proxy,
+        persistent_subscription->context->archive_context,
+        persistent_subscription->request_publication,
+        AERON_ARCHIVE_MESSAGE_RETRY_ATTEMPTS_DEFAULT) < 0)
+    {
+        transition(persistent_subscription, FAILED);
+        AERON_APPEND_ERR("%s", "failed to create archive proxy");
+        fire_on_error_with_aeron_err(persistent_subscription);
+        return 1;
+    }
+
+    aeron_archive_proxy_set_control_session_id(
+        persistent_subscription->response_channel_archive_proxy,
+        aeron_archive_async_client_get_control_session_id(persistent_subscription->archive));
+
+    transition(persistent_subscription, SEND_REPLAY_TOKEN_REQUEST);
+    return 1;
+}
+
+static int send_replay_token_request(aeron_archive_persistent_subscription_t *persistent_subscription)
+{
+    int64_t correlation_id = aeron_next_correlation_id(persistent_subscription->context->aeron);
+
+    if (!aeron_archive_async_client_try_send_replay_token_request(
+        persistent_subscription->archive,
+        correlation_id,
+        persistent_subscription->context->recording_id))
+    {
+        if (aeron_archive_async_client_is_connected(persistent_subscription->archive))
+        {
+            return 0;
+        }
+
+        clean_up_request_publication(persistent_subscription);
+        clean_up_replay_subscription(persistent_subscription);
+
+        transition(persistent_subscription, AWAIT_ARCHIVE_CONNECTION);
+
+        return 1;
+    }
+
+    int64_t deadline_ns = aeron_nano_clock() + persistent_subscription->message_timeout_ns;
+    async_archive_op_init(&persistent_subscription->replay_token_request, correlation_id, deadline_ns);
+
+    transition(persistent_subscription, AWAIT_REPLAY_TOKEN);
+
+    return 1;
+}
+
+static int await_replay_token(aeron_archive_persistent_subscription_t *persistent_subscription)
+{
+    if (!persistent_subscription->replay_token_request.response_received)
+    {
+        if (aeron_nano_clock() - persistent_subscription->replay_token_request.deadline_ns >= 0)
+        {
+            clean_up_request_publication(persistent_subscription);
+            clean_up_replay_subscription(persistent_subscription);
+
+            if (aeron_archive_async_client_is_connected(persistent_subscription->archive))
+            {
+                set_up_replay(persistent_subscription);
+            }
+            else
+            {
+                transition(persistent_subscription, AWAIT_ARCHIVE_CONNECTION);
+            }
+
+            return 1;
+        }
+
+        return 0;
+    }
+
+    if (persistent_subscription->replay_token_request.code != aeron_archive_client_controlResponseCode_OK)
+    {
+        transition(persistent_subscription, FAILED);
+
+        clean_up_request_publication(persistent_subscription);
+        clean_up_replay_subscription(persistent_subscription);
+
+        if (NULL != persistent_subscription->listener.on_error)
+        {
+            char message[AERON_ERROR_MAX_TOTAL_LENGTH];
+            snprintf(message, sizeof(message), "Replay token request failed: %s",
+                persistent_subscription->replay_token_request.error_message);
+
+            persistent_subscription->listener.on_error(
+                persistent_subscription->listener.clientd,
+                (int)persistent_subscription->replay_token_request.relevant_id,
+                message);
+        }
+
+        return 1;
+    }
+
+    persistent_subscription->replay_token = persistent_subscription->replay_token_request.relevant_id;
+
+    if (persistent_subscription->replay_channel_is_ipc)
+    {
+        transition(persistent_subscription, SEND_REPLAY_REQUEST);
+    }
+    else
+    {
+        transition(persistent_subscription, AWAIT_REPLAY_CHANNEL_ENDPOINT);
+    }
 
     return 1;
 }
@@ -1421,7 +1688,7 @@ static int await_live(aeron_archive_persistent_subscription_t *persistent_subscr
 
             persistent_subscription->add_live_subscription = NULL;
 
-            if (errcode == ENOTCONN)
+            if (errcode == ENOTCONN) // TODO ENOTCONN???
             {
                 transition(persistent_subscription, ADD_LIVE_SUBSCRIPTION);
             }
@@ -1559,6 +1826,18 @@ int aeron_archive_persistent_subscription_controlled_poll(
             break;
         case AWAIT_REPLAY_CHANNEL_ENDPOINT:
             work_count += await_replay_channel_endpoint(persistent_subscription);
+            break;
+        case ADD_REQUEST_PUBLICATION:
+            work_count += add_request_publication(persistent_subscription);
+            break;
+        case AWAIT_REQUEST_PUBLICATION:
+            work_count += await_request_publication(persistent_subscription);
+            break;
+        case SEND_REPLAY_TOKEN_REQUEST:
+            work_count += send_replay_token_request(persistent_subscription);
+            break;
+        case AWAIT_REPLAY_TOKEN:
+            work_count += await_replay_token(persistent_subscription);
             break;
         case REPLAY:
             work_count += replay(persistent_subscription, handler, clientd, fragment_limit);

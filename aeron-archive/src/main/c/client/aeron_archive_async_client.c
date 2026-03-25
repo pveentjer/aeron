@@ -230,6 +230,13 @@ bool aeron_archive_async_client_is_closed(aeron_archive_async_client_t *client)
     return client->state == AERON_ARCHIVE_ASYNC_CLIENT_CLOSED;
 }
 
+int64_t aeron_archive_async_client_get_control_session_id(aeron_archive_async_client_t *client)
+{
+    return client->state == AERON_ARCHIVE_ASYNC_CLIENT_CONNECTED
+        ? aeron_archive_control_session_id(client->archive)
+        : AERON_NULL_VALUE;
+}
+
 bool aeron_archive_async_client_try_send_list_recording_request(
     aeron_archive_async_client_t *client,
     int64_t correlation_id,
@@ -275,8 +282,30 @@ bool aeron_archive_async_client_try_send_max_recorded_position_request(
     return false;
 }
 
+bool aeron_archive_async_client_try_send_replay_token_request(
+    aeron_archive_async_client_t *client,
+    int64_t correlation_id,
+    int64_t recording_id)
+{
+    if (client->state == AERON_ARCHIVE_ASYNC_CLIENT_CONNECTED)
+    {
+        if (aeron_archive_request_replay_token(client->archive->archive_proxy, correlation_id, recording_id))
+        {
+            return true;
+        }
+
+        if (ENOTCONN == aeron_errcode())
+        {
+            client->state = AERON_ARCHIVE_ASYNC_CLIENT_DISCONNECTED;
+        }
+    }
+
+    return false;
+}
+
 bool aeron_archive_async_client_try_send_replay_request(
     aeron_archive_async_client_t *client,
+    aeron_archive_proxy_t *archive_proxy,
     int64_t correlation_id,
     int64_t recording_id,
     const char *replay_channel,
@@ -286,7 +315,7 @@ bool aeron_archive_async_client_try_send_replay_request(
     if (client->state == AERON_ARCHIVE_ASYNC_CLIENT_CONNECTED)
     {
         if (aeron_archive_proxy_replay(
-            client->archive->archive_proxy,
+            archive_proxy != NULL ? archive_proxy : client->archive->archive_proxy,
             correlation_id,
             recording_id,
             replay_channel,
