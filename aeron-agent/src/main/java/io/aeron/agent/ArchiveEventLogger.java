@@ -23,34 +23,9 @@ import org.agrona.concurrent.ringbuffer.RingBuffer;
 
 import java.util.EnumSet;
 
-import static io.aeron.agent.ArchiveEventCode.CATALOG_RESIZE;
-import static io.aeron.agent.ArchiveEventCode.CMD_OUT_RESPONSE;
-import static io.aeron.agent.ArchiveEventCode.CONTROL_SESSION_STATE_CHANGE;
-import static io.aeron.agent.ArchiveEventCode.PERSISTENT_SUBSCRIPTION_STATE_CHANGE;
-import static io.aeron.agent.ArchiveEventCode.RECORDING_SESSION_STATE_CHANGE;
-import static io.aeron.agent.ArchiveEventCode.RECORDING_SIGNAL;
-import static io.aeron.agent.ArchiveEventCode.REPLAY_SESSION_ERROR;
-import static io.aeron.agent.ArchiveEventCode.REPLAY_SESSION_STATE_CHANGE;
-import static io.aeron.agent.ArchiveEventCode.REPLICATION_SESSION_DONE;
-import static io.aeron.agent.ArchiveEventCode.REPLICATION_SESSION_STATE_CHANGE;
-import static io.aeron.agent.ArchiveEventCode.getByTemplateId;
-import static io.aeron.agent.ArchiveEventEncoder.encodeCatalogResize;
-import static io.aeron.agent.ArchiveEventEncoder.encodeControlSessionStateChange;
-import static io.aeron.agent.ArchiveEventEncoder.encodePersistentSubscriptionStateChange;
-import static io.aeron.agent.ArchiveEventEncoder.encodeRecordingSessionStateChange;
-import static io.aeron.agent.ArchiveEventEncoder.encodeReplaySessionError;
-import static io.aeron.agent.ArchiveEventEncoder.encodeReplaySessionStateChange;
-import static io.aeron.agent.ArchiveEventEncoder.encodeReplicationSessionDone;
-import static io.aeron.agent.ArchiveEventEncoder.encodeReplicationSessionStateChange;
-import static io.aeron.agent.ArchiveEventEncoder.persistentSubscriptionStateChangeLength;
-import static io.aeron.agent.ArchiveEventEncoder.recordingSessionStateChangeLength;
-import static io.aeron.agent.ArchiveEventEncoder.replaySessionStateChangeLength;
-import static io.aeron.agent.ArchiveEventEncoder.replicationSessionDoneLength;
-import static io.aeron.agent.ArchiveEventEncoder.replicationSessionStateChangeLength;
-import static io.aeron.agent.ArchiveEventEncoder.sessionStateChangeLength;
-import static io.aeron.agent.CommonEventEncoder.captureLength;
-import static io.aeron.agent.CommonEventEncoder.encode;
-import static io.aeron.agent.CommonEventEncoder.encodedLength;
+import static io.aeron.agent.ArchiveEventCode.*;
+import static io.aeron.agent.ArchiveEventEncoder.*;
+import static io.aeron.agent.CommonEventEncoder.*;
 import static io.aeron.agent.EventConfiguration.EVENT_RING_BUFFER;
 import static java.util.EnumSet.complementOf;
 import static java.util.EnumSet.of;
@@ -179,6 +154,18 @@ public final class ArchiveEventLogger
         }
     }
 
+    /**
+     * Log a state change event for {@link io.aeron.archive.client.PersistentSubscription}.
+     *
+     * @param <E>         type representing the state change.
+     * @param oldState    before the change.
+     * @param newState    after the change.
+     * @param recordingId recording id used by the {@code PersistentSubscription}.
+     * @param replayStreamId the replay stream id used by the {@code PersistentSubscription}.
+     * @param liveStreamId the live stream id used by the {@code PersistentSubscription}.
+     * @param replayChannel the replay channel used by the {@code PersistentSubscription}.
+     * @param liveChannel   the live channel used by the {@code PersistentSubscription}.
+     */
     public <E extends Enum<E>> void logPersistentSubscriptionStateChange(
         final E oldState,
         final E newState,
@@ -210,6 +197,39 @@ public final class ArchiveEventLogger
                     liveStreamId,
                     replayChannel,
                     liveChannel);
+            }
+            finally
+            {
+                ringBuffer.commit(index);
+            }
+        }
+    }
+
+    /**
+     * Log the state of {@link io.aeron.archive.client.PersistentSubscription} when it joins live.
+     *
+     * @param liveSessionId identity for the live image in the {@code PersistentSubscription}.
+     * @param joinPosition the position of the live stream when the {@code PersistentSubscription} joined.
+     */
+    public void logPersistentSubscriptionJoinedLive(final int liveSessionId, final long joinPosition)
+    {
+        final int length = SIZE_OF_INT + SIZE_OF_LONG;
+        final int captureLength = captureLength(length);
+        final int encodedLength = encodedLength(captureLength);
+        final ManyToOneRingBuffer ringBuffer = this.ringBuffer;
+        final int index = ringBuffer.tryClaim(PERSISTENT_SUBSCRIPTION_JOINED_LIVE.toEventCodeId(), encodedLength);
+
+        if (index > 0)
+        {
+            try
+            {
+                encodePersistentSubscriptionJoinedLive(
+                    (UnsafeBuffer)ringBuffer.buffer(),
+                    index,
+                    captureLength,
+                    length,
+                    liveSessionId,
+                    joinPosition);
             }
             finally
             {
