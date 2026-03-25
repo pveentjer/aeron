@@ -20,6 +20,7 @@ import io.aeron.Aeron;
 import io.aeron.ChannelUri;
 import io.aeron.ChannelUriStringBuilder;
 import io.aeron.CommonContext;
+import io.aeron.Counter;
 import io.aeron.ErrorCode;
 import io.aeron.ExclusivePublication;
 import io.aeron.Image;
@@ -36,12 +37,14 @@ import io.aeron.logbuffer.FragmentHandler;
 import io.aeron.logbuffer.Header;
 import org.agrona.CloseHelper;
 import org.agrona.DirectBuffer;
+import org.agrona.ExpandableArrayBuffer;
 import org.agrona.SystemUtil;
 import org.agrona.concurrent.NanoClock;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 
+import static io.aeron.AeronCounters.PERSISTENT_SUBSCRIPTION_STATE_TYPE_ID;
 import static io.aeron.CommonContext.ENDPOINT_PARAM_NAME;
 import static io.aeron.archive.client.AeronArchive.NULL_POSITION;
 import static io.aeron.archive.client.AeronArchive.REPLAY_ALL_AND_FOLLOW;
@@ -106,6 +109,7 @@ public final class PersistentSubscription implements AutoCloseable
     private long joinError = Long.MIN_VALUE;
     private long nextLivePosition = Aeron.NULL_VALUE;
     private long position;
+    private final Counter stateCounter;
 
     private PersistentSubscription(final Context ctx)
     {
@@ -125,6 +129,7 @@ public final class PersistentSubscription implements AutoCloseable
         asyncAeronArchive = new AsyncAeronArchive(ctx.aeronArchiveContext().aeron(aeron), new ArchiveListener());
         messageTimeoutNs = ctx.aeronArchiveContext().messageTimeoutNs();
         position = ctx.startPosition;
+        stateCounter = ctx.stateCounter();
 
         state = State.AWAIT_ARCHIVE_CONNECTION;
     }
@@ -1183,6 +1188,10 @@ public final class PersistentSubscription implements AutoCloseable
         if (newState != this.state)
         {
             this.state = newState;
+            if (!stateCounter.isClosed())
+            {
+                stateCounter.setRelease(state.ordinal());
+            }
         }
     }
 
@@ -1400,6 +1409,7 @@ public final class PersistentSubscription implements AutoCloseable
         private int replayStreamId = Aeron.NULL_VALUE;
         private PersistentSubscriptionListener listener = null;
         private AeronArchive.Context aeronArchiveContext = null;
+        private Counter stateCounter = null;
 
         /**
          * Perform a shallow copy of the object.
@@ -1500,6 +1510,12 @@ public final class PersistentSubscription implements AutoCloseable
                 }
                 aeron = Aeron.connect(aeronCtx);
                 ownsAeronClient = true;
+            }
+
+            if (null == stateCounter)
+            {
+                stateCounter = allocateStateCounter(aeron, "Persistent Subscription State",
+                    PERSISTENT_SUBSCRIPTION_STATE_TYPE_ID, replayStreamId, liveStreamId, replayChannel, liveChannel);
             }
         }
 
@@ -1725,6 +1741,29 @@ public final class PersistentSubscription implements AutoCloseable
         }
 
         /**
+         * Set the counter for the current state of the {@code PersistentSubscription}.
+         *
+         * @param stateCounter the counter for the current state of the {@code PersistentSubscription}.
+         * @return this for a fluent API.
+         */
+        public Context stateCounter(final Counter stateCounter)
+        {
+            this.stateCounter = stateCounter;
+            return this;
+        }
+
+        /**
+         * Get the counter for the current state of the {@code PersistentSubscription}.
+         *
+         * @return the counter for the current state of the {@code PersistentSubscription}.
+         * @see PersistentSubscription.State
+         */
+        public Counter stateCounter()
+        {
+            return stateCounter;
+        }
+
+        /**
          * Close the context and free applicable resources.
          * <p>
          * If {@link #ownsAeronClient()} is true then the {@link #aeron()} client will be closed.
@@ -1734,6 +1773,10 @@ public final class PersistentSubscription implements AutoCloseable
             if (ownsAeronClient)
             {
                 CloseHelper.close(aeron);
+            }
+            else if (!aeron.isClosed())
+            {
+                CloseHelper.close(stateCounter);
             }
         }
     }
@@ -1950,5 +1993,31 @@ public final class PersistentSubscription implements AutoCloseable
                     sourceIdentity);
             }
         }
+    }
+
+    private static Counter allocateStateCounter(
+        final Aeron aeron,
+        final String name,
+        final int typeId,
+        final int replayStreamId,
+        final int liveStreamId,
+        final String replayChannel,
+        final String liveChannel)
+    {
+        final ExpandableArrayBuffer tempBuffer = new ExpandableArrayBuffer();
+
+        int index = 0;
+        final int keyLength = index;
+
+        index += tempBuffer.putStringWithoutLengthAscii(index, name + ": ");
+        index += tempBuffer.putIntAscii(index, replayStreamId);
+        index += tempBuffer.putStringWithoutLengthAscii(index, " ");
+        index += tempBuffer.putStringWithoutLengthAscii(index, replayChannel);
+        index += tempBuffer.putStringWithoutLengthAscii(index, " ");
+        index += tempBuffer.putIntAscii(index, liveStreamId);
+        index += tempBuffer.putStringWithoutLengthAscii(index, " ");
+        index += tempBuffer.putStringWithoutLengthAscii(index, liveChannel);
+
+        return aeron.addCounter(typeId, tempBuffer, 0, keyLength, tempBuffer, keyLength, index - keyLength);
     }
 }
