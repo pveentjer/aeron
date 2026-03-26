@@ -336,8 +336,7 @@ int aeron_archive_persistent_subscription_context_set_listener(
     return 0;
 }
 
-static int aeron_archive_persistent_subscription_context_conclude(
-    aeron_archive_persistent_subscription_context_t *context)
+int aeron_archive_persistent_subscription_context_conclude(aeron_archive_persistent_subscription_context_t *context)
 {
     if (NULL == context->archive_context)
     {
@@ -386,6 +385,42 @@ static int aeron_archive_persistent_subscription_context_conclude(
         AERON_SET_ERR(EINVAL, "invalid start_position %" PRIi64, context->start_position);
         return -1;
     }
+
+    aeron_uri_t uri;
+    if (aeron_uri_parse(strlen(context->replay_channel), context->replay_channel, &uri) < 0)
+    {
+        aeron_uri_close(&uri);
+        AERON_APPEND_ERR("failed to parse replay channel '%s'", context->replay_channel);
+        return -1;
+    }
+    const char *control_mode = AERON_URI_UDP == uri.type ? uri.params.udp.control_mode
+        : AERON_URI_IPC == uri.type ? uri.params.ipc.control_mode : NULL;
+    const bool is_response = NULL != control_mode &&
+        0 == strcmp(AERON_UDP_CHANNEL_CONTROL_MODE_RESPONSE_VALUE, control_mode);
+    if (is_response)
+    {
+        const char *control_request_channel = aeron_archive_context_get_control_request_channel(context->archive_context);
+        if (NULL != control_request_channel)
+        {
+            const aeron_uri_type_t replay_media = uri.type;
+            aeron_uri_close(&uri);
+            if (aeron_uri_parse(strlen(control_request_channel), control_request_channel, &uri) < 0)
+            {
+                aeron_uri_close(&uri);
+                AERON_APPEND_ERR("failed to parse control request channel '%s'", control_request_channel);
+                return -1;
+            }
+            if (replay_media != uri.type)
+            {
+                aeron_uri_close(&uri);
+                AERON_SET_ERR(EINVAL, "%s", "Channel media type mismatch. "
+                            "When using `control-mode=response`, the replay channel media type must match the media"
+                            " type for the archive control channel.");
+                return -1;
+            }
+        }
+    }
+    aeron_uri_close(&uri);
 
     if (NULL == context->aeron)
     {
