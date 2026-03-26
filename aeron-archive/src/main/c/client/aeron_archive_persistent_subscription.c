@@ -233,12 +233,16 @@ int aeron_archive_persistent_subscription_context_close(aeron_archive_persistent
 static int set_string(char **ptr, const char *val)
 {
     free(*ptr);
+    *ptr = NULL;
 
-    *ptr = strdup(val);
-    if (NULL == *ptr)
+    if (NULL != val)
     {
-        AERON_SET_ERR(errno, "%s", "Failed to duplicate string");
-        return -1;
+        *ptr = strdup(val);
+        if (NULL == *ptr)
+        {
+            AERON_SET_ERR(errno, "%s", "Failed to duplicate string");
+            return -1;
+        }
     }
 
     return 0;
