@@ -18,12 +18,40 @@
 #define AERON_ARCHIVECLIENTTESTUTILS_H
 
 #include <string>
+#include "../EmbeddedMediaDriver.h"
 
 extern "C"
 {
 #include "aeronc.h"
 #include "client/aeron_archive.h"
+#include "util/aeron_bitutil.h"
 }
+
+class DriverResource
+{
+public:
+    DriverResource()
+    {
+        char path[AERON_MAX_PATH];
+        aeron_default_path(path, sizeof(path));
+        const auto aeronDir = std::string(path) + "-" + std::to_string(aeron_randomised_int32());
+        m_driver.aeronDir(aeronDir);
+        m_driver.start();
+    }
+
+    ~DriverResource()
+    {
+        m_driver.stop();
+    }
+
+    std::string aeronDir()
+    {
+        return m_driver.aeronDir();
+    }
+
+protected:
+    aeron::EmbeddedMediaDriver m_driver;
+};
 
 class AeronResource
 {

@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include "ArchiveClientTestUtils.h"
 #include "gtest/gtest.h"
 
 extern "C"
@@ -39,6 +40,28 @@ TEST_F(AeronArchivePersistentSubscriptionContextTest, testValidContextWithExtern
     EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_replay_channel(context, "aeron:ipc")) << aeron_errmsg();
     EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_replay_stream_id(context, 2000)) << aeron_errmsg();
     EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_aeron(context, reinterpret_cast<aeron_t*>(8))) << aeron_errmsg();
+    EXPECT_EQ(0, aeron_archive_persistent_subscription_context_conclude(context)) << aeron_errmsg();
+    EXPECT_EQ(0, aeron_archive_persistent_subscription_context_close(context)) << aeron_errmsg();
+
+    EXPECT_EQ(0, aeron_archive_context_close(archive_context)) << aeron_errmsg();
+}
+
+TEST_F(AeronArchivePersistentSubscriptionContextTest, testValidContextWithOwnedAeron)
+{
+    DriverResource driver;
+
+    aeron_archive_context_t *archive_context;
+    ASSERT_EQ(0, aeron_archive_context_init(&archive_context)) << aeron_errmsg();
+
+    aeron_archive_persistent_subscription_context_t *context;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_context_init(&context)) << aeron_errmsg();
+    EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_archive_context(context, archive_context)) << aeron_errmsg();
+    EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_recording_id(context, 0)) << aeron_errmsg();
+    EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_live_channel(context, "aeron:ipc")) << aeron_errmsg();
+    EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_live_stream_id(context, 1000)) << aeron_errmsg();
+    EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_replay_channel(context, "aeron:ipc")) << aeron_errmsg();
+    EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_replay_stream_id(context, 2000)) << aeron_errmsg();
+    EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_aeron_directory_name(context, driver.aeronDir().c_str())) << aeron_errmsg();
     EXPECT_EQ(0, aeron_archive_persistent_subscription_context_conclude(context)) << aeron_errmsg();
     EXPECT_EQ(0, aeron_archive_persistent_subscription_context_close(context)) << aeron_errmsg();
 
