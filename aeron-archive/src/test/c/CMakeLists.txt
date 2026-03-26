@@ -41,6 +41,7 @@ endfunction()
 
 if (AERON_UNIT_TESTS)
     aeron_c_archive_test(aeron_archive_async_client_test client/aeron_archive_async_client_test.cpp)
+    aeron_c_archive_test(aeron_archive_persistent_subscription_context_test client/aeron_archive_persistent_subscription_context_test.cpp)
     aeron_c_archive_test(aeron_archive_persistent_subscription_test client/aeron_archive_persistent_subscription_test.cpp)
     aeron_c_archive_test(aeron_archive_test client/aeron_archive_test.cpp)
 endif ()
