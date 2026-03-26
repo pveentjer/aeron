@@ -1537,7 +1537,23 @@ static int replay(
             &persistent_subscription->live_subscription,
             persistent_subscription->add_live_subscription) < 0)
         {
-            // TODO
+            persistent_subscription->add_live_subscription = NULL;
+
+            if (-AERON_ERROR_CODE_RESOURCE_TEMPORARILY_UNAVAILABLE != aeron_errcode())
+            {
+                transition(persistent_subscription, FAILED);
+            }
+
+            AERON_APPEND_ERR("%s", "failed to add live subscription");
+            fire_on_error_with_aeron_err(persistent_subscription);
+
+            if (FAILED == persistent_subscription->state)
+            {
+                clean_up_replay(persistent_subscription);
+                clean_up_replay_subscription(persistent_subscription);
+            }
+
+            return 1;
         }
 
         if (NULL != persistent_subscription->live_subscription)
