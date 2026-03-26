@@ -1188,13 +1188,7 @@ static int add_replay_subscription(aeron_archive_persistent_subscription_t *pers
     {
         transition(persistent_subscription, FAILED);
 
-        if (NULL != persistent_subscription->listener.on_error)
-        {
-            persistent_subscription->listener.on_error(
-                persistent_subscription->listener.clientd,
-                aeron_errcode(),
-                aeron_errmsg());
-        }
+        fire_on_error_with_aeron_err(persistent_subscription);
 
         return 1;
     }
@@ -1853,13 +1847,7 @@ int aeron_archive_persistent_subscription_controlled_poll(
     {
         transition(persistent_subscription, FAILED);
 
-        if (NULL != persistent_subscription->listener.on_error)
-        {
-            persistent_subscription->listener.on_error(
-                persistent_subscription->listener.clientd,
-                aeron_errcode(),
-                aeron_errmsg());
-        }
+        fire_on_error_with_aeron_err(persistent_subscription);
 
         return poll_result;
     }
