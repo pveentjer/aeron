@@ -512,7 +512,7 @@ static bool max_recorded_position_await_max_position(
 
             if (NULL != persistent_subscription->listener.on_error)
             {
-                char message[AERON_ERROR_MAX_TOTAL_LENGTH];
+                char message[AERON_ERROR_MAX_TOTAL_LENGTH + 42];
                 snprintf(message, sizeof(message), "Get max recorded position request failed: %s",
                     max_recorded_position->op.error_message);
 
@@ -1118,7 +1118,7 @@ static int await_replay_response(aeron_archive_persistent_subscription_t *persis
 
         if (NULL != persistent_subscription->listener.on_error)
         {
-            char message[AERON_ERROR_MAX_TOTAL_LENGTH];
+            char message[AERON_ERROR_MAX_TOTAL_LENGTH + 23];
             snprintf(message, sizeof(message), "Replay request failed: %s",
                 persistent_subscription->replay_request.error_message);
 
@@ -1438,7 +1438,7 @@ static int await_replay_token(aeron_archive_persistent_subscription_t *persisten
 
         if (NULL != persistent_subscription->listener.on_error)
         {
-            char message[AERON_ERROR_MAX_TOTAL_LENGTH];
+            char message[AERON_ERROR_MAX_TOTAL_LENGTH + 29];
             snprintf(message, sizeof(message), "Replay token request failed: %s",
                 persistent_subscription->replay_token_request.error_message);
 
