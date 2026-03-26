@@ -1054,6 +1054,7 @@ static int send_replay_request(aeron_archive_persistent_subscription_t *persiste
     aeron_archive_replay_params_t params;
     aeron_archive_replay_params_init(&params);
     params.position = persistent_subscription->position;
+    params.length = ARCHIVE_REPLAY_ALL_AND_FOLLOW;
 
     aeron_archive_proxy_t *archive_proxy = NULL;
     if (persistent_subscription->replay_channel_type == REPLAY_CHANNEL_RESPONSE_CHANNEL)
