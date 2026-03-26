@@ -1346,7 +1346,6 @@ class PersistentSubscriptionTest
 
     @Test
     @InterruptAfter(5)
-    @Disabled("disabling while investigating failure to publish")
     void shouldStartFromStoppedRecordingAndErrorWhenLiveHaveAdvanced()
     {
         final PersistentPublication persistentPublication =
