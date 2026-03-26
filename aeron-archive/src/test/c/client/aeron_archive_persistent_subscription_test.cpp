@@ -21,6 +21,7 @@
 #include <utility>
 
 #include "gtest/gtest.h"
+#include "gmock/gmock-matchers.h"
 #include "../TestArchive.h"
 #include "ArchiveClientTestUtils.h"
 
@@ -1474,6 +1475,43 @@ TEST_F(AeronArchivePersistentSubscriptionTest, aTetheredPersistentSubscriptionDo
     aeron_subscription_close(untethered_subscription, nullptr, nullptr);
 
     ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
+}
+
+TEST_F(AeronArchivePersistentSubscriptionTest, shouldFailIfLiveChannelIsInvalid)
+{
+    TestArchive archive = createArchive(m_aeronDir);
+
+    PersistentPublication persistent_publication(m_aeronDir, IPC_CHANNEL, STREAM_ID);
+
+    AeronResource aeron(m_aeronDir);
+
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
+        aeron.aeron(),
+        createArchiveContext(),
+        persistent_publication.recordingId());
+
+    aeron_archive_persistent_subscription_context_set_live_channel(context, "invalid");
+
+    aeron_archive_persistent_subscription_t *persistent_subscription;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+    MessageCapturingFragmentHandler handler;
+    auto poller = [&]
+    {
+        return aeron_archive_persistent_subscription_controlled_poll(
+            persistent_subscription,
+            MessageCapturingFragmentHandler::onFragment,
+            &handler,
+            10);
+    };
+
+    executeUntil(
+        "has failed",
+        poller,
+        [&] { return aeron_archive_persistent_subscription_has_failed(persistent_subscription); });
+    EXPECT_THAT(aeron_errmsg(), testing::HasSubstr("failed to add live subscription"));
+
+    EXPECT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
 }
 
 struct FragmentLimitAndChannel
