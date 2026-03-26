@@ -1470,7 +1470,7 @@ static int await_replay_token(aeron_archive_persistent_subscription_t *persisten
     return 1;
 }
 
-static void do_add_live_subscription(aeron_archive_persistent_subscription_t *persistent_subscription)
+static bool do_add_live_subscription(aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     persistent_subscription->live_image = NULL;
     persistent_subscription->live_subscription = NULL;
@@ -1486,8 +1486,13 @@ static void do_add_live_subscription(aeron_archive_persistent_subscription_t *pe
         NULL,
         NULL) < 0)
     {
-        // TODO
+        transition(persistent_subscription, FAILED);
+        AERON_APPEND_ERR("%s", "failed to add live subscription");
+        fire_on_error_with_aeron_err(persistent_subscription);
+        return false;
     }
+
+    return true;
 }
 
 static int replay(
@@ -1601,7 +1606,12 @@ static int replay(
         NULL == persistent_subscription->live_subscription &&
         max_recorded_position_caught_up(persistent_subscription, position))
     {
-        do_add_live_subscription(persistent_subscription);
+        if (!do_add_live_subscription(persistent_subscription))
+        {
+            clean_up_replay(persistent_subscription);
+            clean_up_replay_subscription(persistent_subscription);
+            return 1;
+        }
     }
 
     return fragments;
@@ -1722,9 +1732,10 @@ static int attempt_switch(
 
 static int add_live_subscription(aeron_archive_persistent_subscription_t *persistent_subscription)
 {
-    do_add_live_subscription(persistent_subscription);
-
-    transition(persistent_subscription, AWAIT_LIVE);
+    if (do_add_live_subscription(persistent_subscription))
+    {
+        transition(persistent_subscription, AWAIT_LIVE);
+    }
 
     return 1;
 }
