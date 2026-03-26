@@ -137,13 +137,21 @@ class ArchiveInterceptor
             final E oldState,
             final E newState,
             final long recordingId,
-            final int replayStreamId,
-            final int liveStreamId,
             final String replayChannel,
-            final String liveChannel)
+            final int replayStreamId,
+            final String liveChannel,
+            final int liveStreamId
+        )
         {
-            LOGGER.logPersistentSubscriptionStateChange(oldState, newState, recordingId, replayStreamId, liveStreamId,
-                replayChannel, liveChannel);
+            LOGGER.logPersistentSubscriptionStateChange(
+                oldState,
+                newState,
+                recordingId,
+                replayChannel,
+                replayStreamId,
+                liveChannel,
+                liveStreamId
+            );
         }
     }
 
@@ -151,10 +159,24 @@ class ArchiveInterceptor
     {
         @Advice.OnMethodEnter
         static void logJoinedLive(
+            final long recordingId,
+            final String replayChannel,
+            final int replayStreamId,
+            final String liveChannel,
+            final int liveStreamId,
             final int liveSessionId,
-            final long joinPosition)
+            final long joinPosition
+        )
         {
-            LOGGER.logPersistentSubscriptionJoinedLive(liveSessionId, joinPosition);
+            LOGGER.logPersistentSubscriptionJoinedLive(
+                recordingId,
+                replayChannel,
+                replayStreamId,
+                liveChannel,
+                liveStreamId,
+                liveSessionId,
+                joinPosition
+            );
         }
     }
 }

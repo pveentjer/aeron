@@ -115,7 +115,7 @@ public final class PersistentSubscription implements AutoCloseable
         messageTimeoutNs = ctx.aeronArchiveContext().messageTimeoutNs();
         position = ctx.startPosition;
 
-        state(State.AWAIT_ARCHIVE_CONNECTION);
+        state = State.AWAIT_ARCHIVE_CONNECTION;
     }
 
     public static PersistentSubscription create(final Context ctx)
@@ -926,6 +926,15 @@ public final class PersistentSubscription implements AutoCloseable
         if (replayPosition == livePosition)
         {
             state(State.LIVE);
+            logJoinedLive(
+                recordingId,
+                replayChannel,
+                replayStreamId,
+                liveChannel,
+                liveStreamId,
+                liveImage.sessionId(),
+                livePosition
+            );
         }
         else
         {
@@ -1003,6 +1012,15 @@ public final class PersistentSubscription implements AutoCloseable
         if (currentReplayPosition == nextLivePosition)
         {
             state(State.LIVE);
+            logJoinedLive(
+                recordingId,
+                replayChannel,
+                replayStreamId,
+                liveChannel,
+                liveStreamId,
+                liveImage.sessionId(),
+                nextLivePosition
+            );
             return ControlledFragmentHandler.Action.ABORT;
         }
         return assembler.onFragment(buffer, offset, length, header);
@@ -1062,6 +1080,15 @@ public final class PersistentSubscription implements AutoCloseable
 
                 state(State.LIVE);
                 listener.onLiveJoined();
+                logJoinedLive(
+                    recordingId,
+                    replayChannel,
+                    replayStreamId,
+                    liveChannel,
+                    liveStreamId,
+                    liveImage.sessionId(),
+                    position
+                );
 
                 return 1;
             }
@@ -1091,15 +1118,10 @@ public final class PersistentSubscription implements AutoCloseable
 
     private void state(final State newState)
     {
-        logStateChange(state, newState, recordingId, replayStreamId, liveStreamId, replayChannel, liveChannel);
+        logStateChange(state, newState, recordingId, replayChannel, replayStreamId, liveChannel, liveStreamId);
         if (newState != this.state)
         {
             this.state = newState;
-        }
-
-        if (state == State.LIVE)
-        {
-            logJoinedLive(liveImage.sessionId(), position);
         }
     }
 
@@ -1107,15 +1129,22 @@ public final class PersistentSubscription implements AutoCloseable
         final State oldState,
         final State newState,
         final long recordingId,
-        final int replayStreamId,
-        final int liveStreamId,
         final String replayChannel,
-        final String liveChannel)
+        final int replayStreamId,
+        final String liveChannel,
+        final int liveStreamId)
     {
         System.out.println("State: " + oldState + " -> " + newState);
     }
 
-    private void logJoinedLive(final int liveSessionId, final long joinPosition)
+    private void logJoinedLive(
+        final long recordingId,
+        final String replayChannel,
+        final int replayStreamId,
+        final String liveChannel,
+        final int liveStreamId,
+        final int liveSessionId,
+        final long joinPosition)
     {
     }
 
