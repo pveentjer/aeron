@@ -857,7 +857,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldNotReplayOldMessagesWhenSta
 // with the live stream.
 // So first a set of messages are written to the archive. And the persistent subscription is expected
 // to process all these messages and switch to live. Then additional set of messages are send and
-// the persistent subscriuption is expected to process these as well.
+// the persistent subscription is expected to process these as well.
 TEST_F(AeronArchivePersistentSubscriptionTest, shouldTransitionFromReplayToLiveWhileLiveIsAdvancing)
 {
     TestArchive archive = createArchive(m_aeronDir);
