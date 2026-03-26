@@ -1595,11 +1595,11 @@ static int replay(
         assembler,
         fragment_limit);
 
-    int64_t position = aeron_image_position(image); // TODO
+    persistent_subscription->position = aeron_image_position(image);
 
     if (NULL == persistent_subscription->add_live_subscription &&
         NULL == persistent_subscription->live_subscription &&
-        max_recorded_position_caught_up(persistent_subscription, position))
+        max_recorded_position_caught_up(persistent_subscription, persistent_subscription->position))
     {
         do_add_live_subscription(persistent_subscription);
     }
