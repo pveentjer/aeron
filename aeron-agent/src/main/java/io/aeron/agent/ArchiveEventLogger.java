@@ -15,6 +15,7 @@
  */
 package io.aeron.agent;
 
+import io.aeron.archive.client.PersistentSubscription;
 import io.aeron.archive.codecs.MessageHeaderDecoder;
 import org.agrona.DirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
@@ -155,25 +156,26 @@ public final class ArchiveEventLogger
     }
 
     /**
-     * Log a state change event for {@link io.aeron.archive.client.PersistentSubscription}.
+     * Log a state change event for {@link PersistentSubscription}.
      *
-     * @param <E>         type representing the state change.
-     * @param oldState    before the change.
-     * @param newState    after the change.
-     * @param recordingId recording id used by the {@code PersistentSubscription}.
-     * @param replayStreamId the replay stream id used by the {@code PersistentSubscription}.
-     * @param liveStreamId the live stream id used by the {@code PersistentSubscription}.
-     * @param replayChannel the replay channel used by the {@code PersistentSubscription}.
-     * @param liveChannel   the live channel used by the {@code PersistentSubscription}.
+     * @param <E>            type representing the state change.
+     * @param oldState       before the change.
+     * @param newState       after the change.
+     * @param recordingId    recording id used by the {@link PersistentSubscription}.
+     * @param replayChannel  the replay channel used by the {@link PersistentSubscription}.
+     * @param replayStreamId the replay stream id used by the {@link PersistentSubscription}.
+     * @param liveChannel    the live channel used by the {@link PersistentSubscription}.
+     * @param liveStreamId   the live stream id used by the {@link PersistentSubscription}.
      */
     public <E extends Enum<E>> void logPersistentSubscriptionStateChange(
         final E oldState,
         final E newState,
         final long recordingId,
-        final int replayStreamId,
-        final int liveStreamId,
         final String replayChannel,
-        final String liveChannel)
+        final int replayStreamId,
+        final String liveChannel,
+        final int liveStreamId
+    )
     {
         final int length = persistentSubscriptionStateChangeLength(oldState, newState, replayChannel, liveChannel);
         final int captureLength = captureLength(length);
@@ -193,10 +195,11 @@ public final class ArchiveEventLogger
                     oldState,
                     newState,
                     recordingId,
-                    replayStreamId,
-                    liveStreamId,
                     replayChannel,
-                    liveChannel);
+                    replayStreamId,
+                    liveChannel,
+                    liveStreamId
+                );
             }
             finally
             {
@@ -206,14 +209,27 @@ public final class ArchiveEventLogger
     }
 
     /**
-     * Log the state of {@link io.aeron.archive.client.PersistentSubscription} when it joins live.
+     * Log the state of {@link PersistentSubscription} when it joins live.
      *
-     * @param liveSessionId identity for the live image in the {@code PersistentSubscription}.
-     * @param joinPosition the position of the live stream when the {@code PersistentSubscription} joined.
+     * @param recordingId    recording id used by the {@link PersistentSubscription}.
+     * @param replayChannel  the replay channel used by the {@link PersistentSubscription}.
+     * @param replayStreamId the replay stream id used by the {@link PersistentSubscription}.
+     * @param liveChannel    the live channel used by the {@link PersistentSubscription}.
+     * @param liveStreamId   the live stream id used by the {@link PersistentSubscription}.
+     * @param liveSessionId  identity for the live image in the {@link PersistentSubscription}.
+     * @param joinPosition   the position the {@link PersistentSubscription} joined the live stream at.
      */
-    public void logPersistentSubscriptionJoinedLive(final int liveSessionId, final long joinPosition)
+    public void logPersistentSubscriptionJoinedLive(
+        final long recordingId,
+        final String replayChannel,
+        final int replayStreamId,
+        final String liveChannel,
+        final int liveStreamId,
+        final int liveSessionId,
+        final long joinPosition
+    )
     {
-        final int length = SIZE_OF_INT + SIZE_OF_LONG;
+        final int length = persistentSubscriptionJoinedLiveLength(replayChannel, liveChannel);
         final int captureLength = captureLength(length);
         final int encodedLength = encodedLength(captureLength);
         final ManyToOneRingBuffer ringBuffer = this.ringBuffer;
@@ -228,8 +244,14 @@ public final class ArchiveEventLogger
                     index,
                     captureLength,
                     length,
+                    recordingId,
+                    replayChannel,
+                    replayStreamId,
+                    liveChannel,
+                    liveStreamId,
                     liveSessionId,
-                    joinPosition);
+                    joinPosition
+                );
             }
             finally
             {

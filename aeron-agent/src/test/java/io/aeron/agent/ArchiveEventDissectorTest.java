@@ -972,23 +972,23 @@ class ArchiveEventDissectorTest
         int offset = internalEncodeLogHeader(buffer, 0, 10, 20, () -> 1_500_000_000L);
         buffer.putLong(offset, 16);
         offset += SIZE_OF_LONG;
+        offset += buffer.putStringAscii(offset, "aeron:udp?endpoint=localhost:9010");
         buffer.putInt(offset, 10);
         offset += SIZE_OF_INT;
+        offset += buffer.putStringAscii(offset, "aeron:udp?endpoint=localhost:10010");
         buffer.putInt(offset, 11);
         offset += SIZE_OF_INT;
-        offset += buffer.putStringAscii(offset, "x -> y");
-        offset += buffer.putStringAscii(offset, "aeron:udp?endpoint=localhost:9010");
-        buffer.putStringAscii(offset, "aeron:udp?endpoint=localhost:10010");
+        buffer.putStringAscii(offset, "x -> y");
 
         dissectPersistentSubscriptionStateChange(PERSISTENT_SUBSCRIPTION_STATE_CHANGE, buffer, 0, builder);
 
         assertEquals("[1.500000000] " + CONTEXT + ": " + PERSISTENT_SUBSCRIPTION_STATE_CHANGE.name() + " [10/20]:" +
                 " recordingId=16" +
-                " replayStreamId=10" +
-                " liveStreamId=11" +
-                " x -> y" +
                 " replayChannel=aeron:udp?endpoint=localhost:9010" +
-                " liveChannel=aeron:udp?endpoint=localhost:10010",
+                " replayStreamId=10" +
+                " liveChannel=aeron:udp?endpoint=localhost:10010" +
+                " liveStreamId=11" +
+                " x -> y",
             builder.toString());
     }
 
@@ -996,6 +996,14 @@ class ArchiveEventDissectorTest
     void persistentSubscriptionJoinedLive()
     {
         int offset = internalEncodeLogHeader(buffer, 0, 10, 20, () -> 1_500_000_000L);
+        buffer.putLong(offset, 16);
+        offset += SIZE_OF_LONG;
+        offset += buffer.putStringAscii(offset, "aeron:udp?endpoint=localhost:9010");
+        buffer.putInt(offset, 10);
+        offset += SIZE_OF_INT;
+        offset += buffer.putStringAscii(offset, "aeron:udp?endpoint=localhost:10010");
+        buffer.putInt(offset, 11);
+        offset += SIZE_OF_INT;
         buffer.putInt(offset, 21);
         offset += SIZE_OF_INT;
         buffer.putLong(offset, 10);
@@ -1003,6 +1011,11 @@ class ArchiveEventDissectorTest
         dissectPersistentSubscriptionJoinedLive(PERSISTENT_SUBSCRIPTION_JOINED_LIVE, buffer, 0, builder);
 
         assertEquals("[1.500000000] " + CONTEXT + ": " + PERSISTENT_SUBSCRIPTION_JOINED_LIVE.name() + " [10/20]:" +
+                " recordingId=16" +
+                " replayChannel=aeron:udp?endpoint=localhost:9010" +
+                " replayStreamId=10" +
+                " liveChannel=aeron:udp?endpoint=localhost:10010" +
+                " liveStreamId=11" +
                 " liveSessionId=21" +
                 " joinPosition=10",
             builder.toString());
