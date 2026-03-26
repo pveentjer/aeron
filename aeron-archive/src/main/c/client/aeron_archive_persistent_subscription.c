@@ -1214,10 +1214,10 @@ static int await_replay_subscription(aeron_archive_persistent_subscription_t *pe
     {
         int errcode = aeron_errcode();
         persistent_subscription->add_replay_subscription = NULL;
+        clean_up_replay(persistent_subscription);
 
-        if (errcode == ENOTCONN) // TODO ENOTCONN???
+        if (-AERON_ERROR_CODE_RESOURCE_TEMPORARILY_UNAVAILABLE == errcode)
         {
-            clean_up_replay(persistent_subscription);
             set_up_replay(persistent_subscription);
         }
         else
@@ -1727,7 +1727,7 @@ static int await_live(aeron_archive_persistent_subscription_t *persistent_subscr
 
             persistent_subscription->add_live_subscription = NULL;
 
-            if (errcode == ENOTCONN) // TODO ENOTCONN???
+            if (-AERON_ERROR_CODE_RESOURCE_TEMPORARILY_UNAVAILABLE == errcode)
             {
                 transition(persistent_subscription, ADD_LIVE_SUBSCRIPTION);
             }
