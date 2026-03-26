@@ -37,7 +37,7 @@ struct aeron_archive_persistent_subscription_context_stct
 {
     aeron_t *aeron;
     bool owns_aeron_client;
-    char aeron_directory_name[AERON_MAX_PATH];
+    char *aeron_directory_name;
     aeron_archive_context_t *archive_context;
     int64_t recording_id;
     char *live_channel;
@@ -203,7 +203,6 @@ int aeron_archive_persistent_subscription_context_init(aeron_archive_persistent_
         return -1;
     }
 
-    _context->aeron_directory_name[0] = '\0';
     _context->recording_id = AERON_NULL_VALUE;
     _context->live_stream_id = AERON_NULL_VALUE;
     _context->replay_stream_id = AERON_NULL_VALUE;
@@ -218,6 +217,7 @@ int aeron_archive_persistent_subscription_context_close(aeron_archive_persistent
 {
     if (NULL != context)
     {
+        free(context->aeron_directory_name);
         free(context->live_channel);
         free(context->replay_channel);
         if (context->owns_aeron_client)
@@ -261,9 +261,7 @@ int aeron_archive_persistent_subscription_context_set_aeron_directory_name(
     aeron_archive_persistent_subscription_context_t *context,
     const char *aeron_directory_name)
 {
-    strncpy(context->aeron_directory_name, aeron_directory_name, sizeof(context->aeron_directory_name) - 1);
-    context->aeron_directory_name[sizeof(context->aeron_directory_name) - 1] = '\0';
-    return 0;
+    return set_string(&context->aeron_directory_name, aeron_directory_name);
 }
 
 int aeron_archive_persistent_subscription_context_set_archive_context(
@@ -434,7 +432,7 @@ int aeron_archive_persistent_subscription_context_conclude(aeron_archive_persist
             AERON_APPEND_ERR("%s", "Failed to init aeron context");
             return -1;
         }
-        if ('\0' != context->aeron_directory_name[0])
+        if (NULL != context->aeron_directory_name)
         {
             aeron_context_set_dir(aeron_ctx, context->aeron_directory_name);
         }

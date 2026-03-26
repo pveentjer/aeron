@@ -16,7 +16,6 @@
 
 #include "gtest/gtest.h"
 #include <gmock/gmock-matchers.h>
-#include "../EmbeddedMediaDriver.h"
 #include "../TestArchive.h"
 #include "ArchiveClientTestUtils.h"
 
@@ -404,32 +403,6 @@ void pollUntilTrue(
 {
     pollUntil<bool>(label, client, supplier, [](auto x) { return x; });
 }
-
-class DriverResource
-{
-public:
-    DriverResource()
-    {
-        char path[AERON_MAX_PATH];
-        aeron_default_path(path, sizeof(path));
-        const auto aeronDir = std::string(path) + "-" + std::to_string(aeron_randomised_int32());
-        m_driver.aeronDir(aeronDir);
-        m_driver.start();
-    }
-
-    ~DriverResource()
-    {
-        m_driver.stop();
-    }
-
-    std::string aeronDir()
-    {
-        return m_driver.aeronDir();
-    }
-
-protected:
-    aeron::EmbeddedMediaDriver m_driver;
-};
 
 TEST_F(AeronArchiveAsyncClientTest, testAeronArchiveAsyncClient)
 {
