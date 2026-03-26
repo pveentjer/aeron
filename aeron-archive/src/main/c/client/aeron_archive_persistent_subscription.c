@@ -1579,7 +1579,7 @@ static int replay(
         assembler,
         fragment_limit);
 
-    int64_t position = aeron_image_position(image);
+    int64_t position = aeron_image_position(image); // TODO
 
     if (NULL == persistent_subscription->add_live_subscription &&
         NULL == persistent_subscription->live_subscription &&
