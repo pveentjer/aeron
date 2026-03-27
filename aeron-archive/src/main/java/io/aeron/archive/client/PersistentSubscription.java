@@ -45,6 +45,8 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 
 import static io.aeron.AeronCounters.PERSISTENT_SUBSCRIPTION_JOIN_ERROR_TYPE_ID;
+import static io.aeron.AeronCounters.PERSISTENT_SUBSCRIPTION_LIVE_TRANSITION_COUNT_TYPE_ID;
+import static io.aeron.AeronCounters.PERSISTENT_SUBSCRIPTION_REPLAY_TRANSITION_COUNT_TYPE_ID;
 import static io.aeron.AeronCounters.PERSISTENT_SUBSCRIPTION_STATE_TYPE_ID;
 import static io.aeron.CommonContext.ENDPOINT_PARAM_NAME;
 import static io.aeron.archive.client.AeronArchive.NULL_POSITION;
@@ -112,6 +114,8 @@ public final class PersistentSubscription implements AutoCloseable
     private long position;
     private final Counter stateCounter;
     private final Counter joinErrorCounter;
+    private final Counter transitionToReplayCounter;
+    private final Counter transitionToLiveCounter;
 
     private PersistentSubscription(final Context ctx)
     {
@@ -133,6 +137,8 @@ public final class PersistentSubscription implements AutoCloseable
         position = ctx.startPosition;
         stateCounter = ctx.stateCounter;
         joinErrorCounter = ctx.joinErrorCounter;
+        transitionToReplayCounter = ctx.transitionToReplayCounter;
+        transitionToLiveCounter = ctx.transitionToLiveCounter;
 
         state = State.AWAIT_ARCHIVE_CONNECTION;
     }
@@ -984,6 +990,12 @@ public final class PersistentSubscription implements AutoCloseable
         if (replayPosition == livePosition)
         {
             state(State.LIVE);
+
+            if (!transitionToLiveCounter.isClosed())
+            {
+                transitionToLiveCounter.incrementRelease();
+            }
+
             logJoinedLive(
                 recordingId,
                 replayChannel,
@@ -1012,6 +1024,12 @@ public final class PersistentSubscription implements AutoCloseable
                 cleanUpLiveSubscription();
 
                 joinError = Long.MIN_VALUE;
+
+                if (!joinErrorCounter.isClosed())
+                {
+                    joinErrorCounter.setRelease(joinError);
+                }
+
                 maxRecordedPosition.reset(listRecordingRequest.termBufferLength >> 2);
 
                 state(State.REPLAY);
@@ -1088,6 +1106,12 @@ public final class PersistentSubscription implements AutoCloseable
         if (currentReplayPosition == nextLivePosition)
         {
             state(State.LIVE);
+
+            if (!transitionToLiveCounter.isClosed())
+            {
+                transitionToLiveCounter.incrementRelease();
+            }
+
             logJoinedLive(
                 recordingId,
                 replayChannel,
@@ -1197,6 +1221,12 @@ public final class PersistentSubscription implements AutoCloseable
             cleanUpLiveSubscription();
             setUpReplay();
             listener.onLiveLeft();
+
+            if (!transitionToReplayCounter.isClosed())
+            {
+                transitionToReplayCounter.incrementRelease();
+            }
+
             return 1;
         }
         return fragments;
@@ -1431,6 +1461,8 @@ public final class PersistentSubscription implements AutoCloseable
         private AeronArchive.Context aeronArchiveContext = null;
         private Counter stateCounter = null;
         private Counter joinErrorCounter = null;
+        private Counter transitionToReplayCounter;
+        private Counter transitionToLiveCounter;
 
         /**
          * Perform a shallow copy of the object.
@@ -1553,6 +1585,32 @@ public final class PersistentSubscription implements AutoCloseable
                   aeron,
                   "Persistent Subscription Join Error",
                   PERSISTENT_SUBSCRIPTION_JOIN_ERROR_TYPE_ID,
+                  replayStreamId,
+                  liveStreamId,
+                  replayChannel,
+                  liveChannel
+                );
+            }
+
+            if (null == transitionToReplayCounter)
+            {
+               transitionToReplayCounter = allocatePersistentSubscriptionCounter(
+                  aeron,
+                  "Persistent Subscription Replay Transition Count",
+                  PERSISTENT_SUBSCRIPTION_REPLAY_TRANSITION_COUNT_TYPE_ID,
+                  replayStreamId,
+                  liveStreamId,
+                  replayChannel,
+                  liveChannel
+                );
+            }
+
+            if (null == transitionToLiveCounter)
+            {
+               transitionToLiveCounter = allocatePersistentSubscriptionCounter(
+                  aeron,
+                  "Persistent Subscription Live Transition Count",
+                  PERSISTENT_SUBSCRIPTION_LIVE_TRANSITION_COUNT_TYPE_ID,
                   replayStreamId,
                   liveStreamId,
                   replayChannel,
@@ -1825,11 +1883,58 @@ public final class PersistentSubscription implements AutoCloseable
          * This represents the difference between the subscription's position in the replay and the position it joined
          * live.
          * When the subscription is not consuming from live, the value of this counter will be {@code Long.MIN_VALUE}.
+         *
          * @return the counter for the {@code PersistentSubscription}'s join error.
          */
         public Counter joinErrorCounter()
         {
             return joinErrorCounter;
+        }
+
+        /**
+         * Set the counter for the number of times a {@code PersistentSubscription} has transitioned from live to
+         * replay.
+         * @param transitionToReplayCounter the counter for the number of transitions to replay.
+         * @return this for a fluent API.
+         */
+        public Context transitionToReplayCounter(final Counter transitionToReplayCounter)
+        {
+            this.transitionToReplayCounter = transitionToReplayCounter;
+            return this;
+        }
+
+        /**
+         * Get the counter for the number of times a {@code PersistentSubscription} has transitioned from live to
+         * replay.
+         *
+         * @return the counter for the number of transitions to replay.
+         */
+        public Counter transitionToReplayCounter()
+        {
+            return transitionToReplayCounter;
+        }
+
+        /**
+         * Set the counter for the number of times a {@code PersistentSubscription} has transitioned from replay to
+         * live.
+         * @param transitionToLiveCounter the counter for the number of transitions to live.
+         * @return this for a fluent API.
+         */
+        public Context transitionToLiveCounter(final Counter transitionToLiveCounter)
+        {
+            this.transitionToLiveCounter = transitionToLiveCounter;
+            return this;
+        }
+
+        /**
+         * Get the counter for the number of times a {@code PersistentSubscription} has transitioned from replay to
+         * live.
+         *
+         * @return the counter for the number of transitions to live.
+         */
+        public Counter transitionToLiveCounter()
+        {
+            return transitionToLiveCounter;
         }
 
         /**
@@ -1845,7 +1950,12 @@ public final class PersistentSubscription implements AutoCloseable
             }
             else if (!aeron.isClosed())
             {
-                CloseHelper.closeAll(stateCounter, joinErrorCounter);
+                CloseHelper.closeAll(
+                  stateCounter,
+                  joinErrorCounter,
+                  transitionToReplayCounter,
+                  transitionToLiveCounter
+                );
             }
         }
     }

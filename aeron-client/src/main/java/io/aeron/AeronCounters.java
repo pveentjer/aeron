@@ -836,6 +836,20 @@ public final class AeronCounters
     @AeronCounter
     public static final int PERSISTENT_SUBSCRIPTION_JOIN_ERROR_TYPE_ID = 115;
 
+    /**
+     * The type id of the {@link Counter} used for tracking the number of times a {@code PersistentSubscription} has
+     * transitioned from live to replay.
+     */
+    @AeronCounter
+    public static final int PERSISTENT_SUBSCRIPTION_REPLAY_TRANSITION_COUNT_TYPE_ID = 116;
+
+    /**
+     * The type id of the {@link Counter} used for tracking the number of times a {@code PersistentSubscription} has
+     * transitioned from replay to live.
+     */
+    @AeronCounter
+    public static final int PERSISTENT_SUBSCRIPTION_LIVE_TRANSITION_COUNT_TYPE_ID = 117;
+
     // Cluster counters
 
     /**
