@@ -1594,7 +1594,7 @@ public final class PersistentSubscription implements AutoCloseable
 
             if (null == transitionToReplayCounter)
             {
-               transitionToReplayCounter = allocatePersistentSubscriptionCounter(
+                transitionToReplayCounter = allocatePersistentSubscriptionCounter(
                   aeron,
                   "Persistent Subscription Replay Transition Count",
                   PERSISTENT_SUBSCRIPTION_REPLAY_TRANSITION_COUNT_TYPE_ID,
@@ -1607,7 +1607,7 @@ public final class PersistentSubscription implements AutoCloseable
 
             if (null == transitionToLiveCounter)
             {
-               transitionToLiveCounter = allocatePersistentSubscriptionCounter(
+                transitionToLiveCounter = allocatePersistentSubscriptionCounter(
                   aeron,
                   "Persistent Subscription Live Transition Count",
                   PERSISTENT_SUBSCRIPTION_LIVE_TRANSITION_COUNT_TYPE_ID,
@@ -1951,10 +1951,10 @@ public final class PersistentSubscription implements AutoCloseable
             else if (!aeron.isClosed())
             {
                 CloseHelper.closeAll(
-                  stateCounter,
-                  joinErrorCounter,
-                  transitionToReplayCounter,
-                  transitionToLiveCounter
+                    stateCounter,
+                    joinErrorCounter,
+                    transitionToReplayCounter,
+                    transitionToLiveCounter
                 );
             }
         }
