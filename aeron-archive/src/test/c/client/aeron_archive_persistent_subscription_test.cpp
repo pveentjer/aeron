@@ -22,6 +22,7 @@
 
 #include "gtest/gtest.h"
 #include "gmock/gmock-matchers.h"
+#include "../IpTables.h"
 #include "../TestArchive.h"
 #include "ArchiveClientTestUtils.h"
 
@@ -91,6 +92,36 @@ public:
 
 private:
     std::vector<std::vector<uint8_t>> m_messages;
+};
+
+class PrintingListener
+{
+    aeron_archive_persistent_subscription_listener_t m_listener;
+
+    static void onLiveJoined(void *clientd)
+    {
+        std::cout << "live joined" << std::endl;
+    }
+
+    static void onLiveLeft(void *clientd)
+    {
+        std::cout << "live left" << std::endl;
+    }
+
+    static void onError(void *clientd, int errcode, const char *message)
+    {
+        std::cout << "error " << errcode << " " << message << std::endl;
+    }
+
+public:
+    PrintingListener() : m_listener({onLiveJoined, onLiveLeft, onError, nullptr})
+    {
+    }
+
+    aeron_archive_persistent_subscription_listener_t *listener()
+    {
+        return &m_listener;
+    }
 };
 
 class PersistentPublication
@@ -275,6 +306,57 @@ private:
     int32_t m_recPosId;
 };
 
+std::string to_hex(const std::vector<unsigned char>& vector)
+{
+    std::string s;
+    s.resize(vector.size() * 2);
+    char *ptr = &s.front();
+    for (const auto c : vector)
+    {
+        sprintf(ptr, "%02x", c);
+        ptr += 2;
+    }
+    return s;
+}
+
+testing::AssertionResult MessagesEq(
+    const std::vector<std::vector<uint8_t>>& expected,
+    const std::vector<std::vector<uint8_t>>& actual)
+{
+    bool eq = expected.size() == actual.size();
+
+    if (eq)
+    {
+        for (size_t i = 0; i < expected.size(); i++)
+        {
+            if (expected[i] != actual[i])
+            {
+                eq = false;
+                break;
+            }
+        }
+    }
+
+    if (eq)
+    {
+        return testing::AssertionSuccess();
+    }
+
+    std::string description;
+    description += "\nexpected " + std::to_string(expected.size()) + " messages:";
+    for (const auto& message : expected)
+    {
+        description += "\n" + to_hex(message);
+    }
+    description += "\n\nbut got " + std::to_string(actual.size()) + " messages:";
+    for (const auto& message : actual)
+    {
+        description += "\n" + to_hex(message);
+    }
+
+    return testing::AssertionFailure() << description;
+}
+
 class AeronArchivePersistentSubscriptionTest : public testing::Test
 {
 protected:
@@ -421,6 +503,71 @@ protected:
                 std::this_thread::yield();
             }
         }
+    }
+
+    void shouldHandleReplayImageBecomingUnavailable(const int replayableMessageCount)
+    {
+        TestArchive archive = createArchive(m_aeronDir);
+
+        const std::vector<std::vector<uint8_t>> messages =
+            generateFixedMessages(replayableMessageCount, ONE_KB_MESSAGE_SIZE);
+
+        PersistentPublication persistent_publication(m_aeronDir, IPC_CHANNEL, STREAM_ID);
+        persistent_publication.persist(messages);
+
+        AeronResource aeron(m_aeronDir);
+
+        aeron_archive_persistent_subscription_context_t* context = createDefaultPersistentSubscriptionContext(
+            aeron.aeron(),
+            createArchiveContext(),
+            persistent_publication.recordingId());
+        aeron_archive_persistent_subscription_context_set_replay_channel(context,
+            "aeron:udp?endpoint=127.0.0.1:10013|rcv-wnd=4k");
+
+        PrintingListener printingListener;
+        aeron_archive_persistent_subscription_context_set_listener(context, printingListener.listener());
+
+        aeron_archive_persistent_subscription_t* persistent_subscription;
+        ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+        MessageCapturingFragmentHandler handler;
+        auto poller = [&]
+        {
+            return aeron_archive_persistent_subscription_controlled_poll(
+                persistent_subscription,
+                MessageCapturingFragmentHandler::onFragment,
+                &handler,
+                1);
+        };
+
+        executeUntil(
+            "a few messages received",
+            poller,
+            [&] { return handler.messageCount() == 5; });
+
+        IpTables ipTables("AERON-TEST");
+        ipTables.dropUdpTrafficBetweenHosts("127.0.0.1", -1, "127.0.0.1", 10013);
+
+        EXPECT_TRUE(aeron_archive_persistent_subscription_is_replaying(persistent_subscription));
+        executeUntil(
+            "replay stops",
+            poller,
+            [&]
+            {
+                return !aeron_archive_persistent_subscription_is_replaying(persistent_subscription)
+                    && !aeron_archive_persistent_subscription_is_live(persistent_subscription);
+            });
+
+        ipTables.flushChain();
+
+        executeUntil(
+            "becomes live",
+            poller,
+            [&] { return aeron_archive_persistent_subscription_is_live(persistent_subscription); });
+
+        EXPECT_TRUE(MessagesEq(messages, handler.messages()));
+
+        EXPECT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
     }
 
 private:
@@ -2032,3 +2179,15 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldHandleReplayBeingAheadOfLiv
 
     ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
 }
+
+#if defined(__linux__)
+TEST_F(AeronArchivePersistentSubscriptionTest, shouldHandleReplayImageBecomingUnavailableDuringReplay)
+{
+    shouldHandleReplayImageBecomingUnavailable(80);
+}
+
+TEST_F(AeronArchivePersistentSubscriptionTest, shouldHandleReplayImageBecomingUnavailableDuringAttemptSwitch)
+{
+    shouldHandleReplayImageBecomingUnavailable(12);
+}
+#endif

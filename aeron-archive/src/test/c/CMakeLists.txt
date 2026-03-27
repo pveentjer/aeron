@@ -25,6 +25,7 @@ add_definitions(-DJAVA_MINOR_VERSION=${Java_VERSION_MINOR})
 
 set(TEST_HEADERS
     EmbeddedMediaDriver.h
+    IpTables.h
     TestArchive.h
     client/ArchiveClientTestUtils.h)
 
