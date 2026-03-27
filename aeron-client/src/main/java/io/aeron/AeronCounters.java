@@ -818,6 +818,12 @@ public final class AeronCounters
     @AeronCounter
     public static final int PERSISTENT_SUBSCRIPTION_STATE_TYPE_ID = 114;
 
+    /**
+     * The type id of the {@link Counter} used for tracking the join error of a {@code PersistentSubscription}.
+     */
+    @AeronCounter
+    public static final int PERSISTENT_SUBSCRIPTION_JOIN_ERROR_TYPE_ID = 115;
+
     // Cluster counters
 
     /**
