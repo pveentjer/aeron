@@ -853,6 +853,7 @@ int aeron_archive_persistent_subscription_close(aeron_archive_persistent_subscri
 {
     if (NULL != persistent_subscription)
     {
+        // TODO take into account aeron ownership?
         clean_up_live_subscription(persistent_subscription);
         clean_up_request_publication(persistent_subscription);
         clean_up_replay(persistent_subscription);
@@ -1848,6 +1849,7 @@ int aeron_archive_persistent_subscription_controlled_poll(
     int poll_result = aeron_archive_async_client_poll(persistent_subscription->archive);
     if (poll_result < 0)
     {
+        // TODO is this needed? if it is, it's missing resource cleanup
         transition(persistent_subscription, FAILED);
 
         fire_on_error_with_aeron_err(persistent_subscription);
