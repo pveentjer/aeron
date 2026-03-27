@@ -135,7 +135,8 @@ class PersistentSubscriptionTest
         .ipcTermBufferLength(TERM_LENGTH)
         .dirDeleteOnShutdown(true)
         .imageLivenessTimeoutNs(TimeUnit.SECONDS.toNanos(2))
-        .untetheredWindowLimitTimeoutNs(TimeUnit.SECONDS.toNanos(2))
+        .untetheredWindowLimitTimeoutNs(TimeUnit.SECONDS.toNanos(1))
+        .untetheredLingerTimeoutNs(TimeUnit.SECONDS.toNanos(1))
         .publicationLingerTimeoutNs(TimeUnit.SECONDS.toNanos(1))
         .spiesSimulateConnection(true);
 
@@ -926,33 +927,39 @@ class PersistentSubscriptionTest
         }
     }
 
-    @Test
+    @ParameterizedTest
     @InterruptAfter(15)
-    void anUntetheredPersistentSubscriptionCanFallBehindATetheredSubscription()
+    @ValueSource(strings = { UNICAST_CHANNEL, IPC_CHANNEL })
+    void anUntetheredPersistentSubscriptionCanFallBackToReplay(final String channel)
     {
+        final ChannelUriStringBuilder channelUriStringBuilder = new ChannelUriStringBuilder(channel);
+
         final PersistentPublication persistentPublication =
-            PersistentPublication.create(aeronArchive, UNICAST_CHANNEL, STREAM_ID);
+            PersistentPublication.create(aeronArchive, channel, STREAM_ID);
 
         persistentSubscriptionCtx
             .recordingId(persistentPublication.recordingId())
-            .liveChannel(UNICAST_CHANNEL + "|tether=false"); // <-- persistentSubscription is untethered
+            .liveChannel(channelUriStringBuilder.tether(false).build());
 
         final CountingFragmentHandler fastSubscriptionFragmentHandler = new CountingFragmentHandler();
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx);
-            Subscription subscription = aeron.addSubscription(UNICAST_CHANNEL + "|tether=true", STREAM_ID))
+            Subscription fastSubscription = aeron.addSubscription(channelUriStringBuilder.tether(true).build(), STREAM_ID))
         {
-            Tests.awaitConnected(subscription);
+            Tests.awaitConnected(fastSubscription);
 
             executeUntil(
                 persistentSubscription::isLive,
                 () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
             );
-
-            persistentPublication.persist(generateFixedPayloads(64, ONE_KB_MESSAGE_SIZE));
-
+            persistentPublication.persist(generateFixedPayloads(32, ONE_KB_MESSAGE_SIZE));
+            executeUntil(
+                () -> fastSubscriptionFragmentHandler.hasReceivedPayloads(32),
+                () -> fastSubscription.poll(fastSubscriptionFragmentHandler, 10)
+            );
+            persistentPublication.persist(generateFixedPayloads(32, ONE_KB_MESSAGE_SIZE));
             executeUntil(
                 () -> fastSubscriptionFragmentHandler.hasReceivedPayloads(64),
-                () -> subscription.poll(fastSubscriptionFragmentHandler, 10)
+                () -> fastSubscription.poll(fastSubscriptionFragmentHandler, 10)
             );
 
             executeUntil(
@@ -966,40 +973,6 @@ class PersistentSubscriptionTest
                 persistentSubscription::isLive,
                 () -> persistentSubscription.controlledPoll(fragmentHandler, 1)
             );
-        }
-    }
-
-    @Test
-    @InterruptAfter(15)
-    void aTetheredPersistentSubscriptionDoesNotFallBehindAnUntetheredSubscription()
-    {
-        final PersistentPublication persistentPublication =
-            PersistentPublication.create(aeronArchive, UNICAST_CHANNEL, STREAM_ID);
-
-        persistentSubscriptionCtx
-            .recordingId(persistentPublication.recordingId())
-            .liveChannel(UNICAST_CHANNEL + "|tether=true"); // <-- persistentSubscription is tethered
-
-        try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx);
-            Subscription subscription = aeron.addSubscription(UNICAST_CHANNEL + "|tether=false", STREAM_ID))
-        {
-            Tests.awaitConnected(subscription);
-
-            executeUntil(
-                persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
-            );
-
-            persistentPublication.persist(generateFixedPayloads(64, ONE_KB_MESSAGE_SIZE));
-
-            executeUntil(
-                () -> fragmentHandler.hasReceivedPayloads(64),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1)
-            );
-
-            assertTrue(persistentSubscription.isLive());
-
-            Tests.await(() -> !subscription.isConnected());
         }
     }
 
@@ -1305,7 +1278,8 @@ class PersistentSubscriptionTest
 
     @InterruptAfter(10)
     @Test
-    void shouldStayOnAReplayWhenLiveCannotConnect(){
+    void shouldStayOnAReplayWhenLiveCannotConnect()
+    {
         final PersistentPublication persistentPublication =
             PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
 
@@ -1915,7 +1889,7 @@ class PersistentSubscriptionTest
                     {
                         lossState = LossState.IN_PROGRESS;
                         deadline = System.nanoTime() +
-                                   driver2Ctx.imageLivenessTimeoutNs() + TimeUnit.MILLISECONDS.toNanos(200);
+                            driver2Ctx.imageLivenessTimeoutNs() + TimeUnit.MILLISECONDS.toNanos(200);
                         lossGenerator.enable(persistentSubscriptionCtx.replayStreamId());
                     }
 
@@ -2489,7 +2463,7 @@ class PersistentSubscriptionTest
         static PersistentPublication create(
             final AeronArchive aeronArchive,
             final ExclusivePublication publication
-            )
+        )
         {
             final CountersReader countersReader = aeronArchive.context().aeron().countersReader();
             final int recordingCounterId =
