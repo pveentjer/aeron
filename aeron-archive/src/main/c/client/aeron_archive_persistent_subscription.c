@@ -1053,12 +1053,15 @@ static int send_replay_request(aeron_archive_persistent_subscription_t *persiste
         params.replay_token = persistent_subscription->replay_token;
     }
 
+    const char *channel = persistent_subscription->replay_channel_type == REPLAY_CHANNEL_SESSION_SPECIFIC ?
+        persistent_subscription->context->replay_channel : persistent_subscription->replay_channel_uri;
+
     if (!aeron_archive_async_client_try_send_replay_request(
         persistent_subscription->archive,
         archive_proxy,
         correlation_id,
         persistent_subscription->context->recording_id,
-        persistent_subscription->replay_channel_uri,
+        channel,
         persistent_subscription->context->replay_stream_id,
         &params))
     {
@@ -1592,11 +1595,11 @@ static int replay(
         assembler,
         fragment_limit);
 
-    int64_t position = aeron_image_position(image); // TODO
+    persistent_subscription->position = aeron_image_position(image);
 
     if (NULL == persistent_subscription->add_live_subscription &&
         NULL == persistent_subscription->live_subscription &&
-        max_recorded_position_caught_up(persistent_subscription, position))
+        max_recorded_position_caught_up(persistent_subscription, persistent_subscription->position))
     {
         if (!do_add_live_subscription(persistent_subscription))
         {
