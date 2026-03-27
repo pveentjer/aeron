@@ -265,4 +265,26 @@ class PersistentSubscriptionContextTest
         assertNotSame(nullJoinErrorCounter, context.joinErrorCounter());
         assertNotNull(context.joinErrorCounter());
     }
+
+    @Test
+    void contextShouldCreateTransitionToReplayCounterIfNoneProvided()
+    {
+        final Counter nullTransitiontoReplayCounter = null;
+        context.transitionToReplayCounter(nullTransitiontoReplayCounter);
+        context.conclude();
+
+        assertNotSame(nullTransitiontoReplayCounter, context.transitionToReplayCounter());
+        assertNotNull(context.transitionToReplayCounter());
+    }
+
+    @Test
+    void contextShouldCreateTransitionToLiveCounterIfNoneProvided()
+    {
+        final Counter nullTransitiontoLiveCounter = null;
+        context.transitionToLiveCounter(nullTransitiontoLiveCounter);
+        context.conclude();
+
+        assertNotSame(nullTransitiontoLiveCounter, context.transitionToLiveCounter());
+        assertNotNull(context.transitionToLiveCounter());
+    }
 }
