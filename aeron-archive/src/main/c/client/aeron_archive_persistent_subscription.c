@@ -869,6 +869,7 @@ int aeron_archive_persistent_subscription_close(aeron_archive_persistent_subscri
         clean_up_replay_subscription(persistent_subscription);
         aeron_archive_async_client_destroy(persistent_subscription->archive);
         aeron_image_controlled_fragment_assembler_delete(persistent_subscription->assembler);
+        aeron_archive_persistent_subscription_context_close(persistent_subscription->context);
         aeron_free(persistent_subscription);
     }
 
