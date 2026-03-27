@@ -32,8 +32,10 @@ import io.aeron.archive.codecs.SourceLocation;
 import io.aeron.archive.status.RecordingPos;
 import io.aeron.driver.MediaDriver;
 import io.aeron.driver.ReceiveChannelEndpointSupplier;
+import io.aeron.driver.SendChannelEndpointSupplier;
 import io.aeron.driver.ThreadingMode;
 import io.aeron.driver.ext.DebugReceiveChannelEndpoint;
+import io.aeron.driver.ext.DebugSendChannelEndpoint;
 import io.aeron.driver.ext.LossGenerator;
 import io.aeron.driver.status.SubscriberPos;
 import io.aeron.exceptions.TimeoutException;
@@ -49,6 +51,7 @@ import io.aeron.test.RandomWatcher;
 import io.aeron.test.SystemTestWatcher;
 import io.aeron.test.TestContexts;
 import io.aeron.test.Tests;
+import io.aeron.test.driver.FrameDataLossGenerator;
 import io.aeron.test.driver.StreamIdFrameDataLossGenerator;
 import io.aeron.test.driver.StreamIdLossGenerator;
 import io.aeron.test.driver.TestMediaDriver;
@@ -1110,6 +1113,82 @@ class PersistentSubscriptionTest
     }
 
     @Test
+    @InterruptAfter(10)
+    void canJoinLiveInTheMiddleOfAFragmentedMessage()
+    {
+        final int maxPayloadLength = driver.context().mtuLength() - DataHeaderFlyweight.HEADER_LENGTH;
+        final byte[] firstHalfOfMessage = new byte[maxPayloadLength];
+        Arrays.fill(firstHalfOfMessage, (byte)1);
+        final byte[] secondHalfOfMessage = new byte[maxPayloadLength];
+        Arrays.fill(secondHalfOfMessage, (byte)2);
+        final byte[] largeMessage = new byte[firstHalfOfMessage.length + secondHalfOfMessage.length];
+        System.arraycopy(firstHalfOfMessage, 0, largeMessage, 0, firstHalfOfMessage.length);
+        System.arraycopy(secondHalfOfMessage, 0, largeMessage, firstHalfOfMessage.length, secondHalfOfMessage.length);
+
+
+        final String aeron2Dir = CommonContext.generateRandomDirName();
+        final FrameDataLossGenerator frameDataLossGenerator = new FrameDataLossGenerator();
+
+        final MediaDriver.Context driverCtxWithLoss = driverCtxTpl.clone()
+            .aeronDirectoryName(aeron2Dir)
+            .imageLivenessTimeoutNs(TimeUnit.SECONDS.toNanos(1))
+            .sendChannelEndpointSupplier(sendChannelEndpointSupplier(frameDataLossGenerator));
+
+        addCloseable(TestMediaDriver.launch(driverCtxWithLoss, systemTestWatcher));
+        systemTestWatcher.dataCollector().add(driverCtxWithLoss.aeronDirectory());
+
+        final Aeron.Context aeron2Context = aeronCtxTpl.clone().aeronDirectoryName(aeron2Dir);
+        final Aeron aeron2 = addCloseable(Aeron.connect(aeron2Context));
+
+        final ExclusivePublication exclusivePublication = aeron2.addExclusivePublication(MDC_PUBLICATION_CHANNEL, STREAM_ID);
+        aeronArchive.startRecording(MDC_PUBLICATION_CHANNEL, STREAM_ID, SourceLocation.REMOTE);
+        final PersistentPublication persistentPublication =
+            PersistentPublication.create(aeronArchive, exclusivePublication);
+
+        AtomicBoolean keepDroppingAfterMatch = new AtomicBoolean(false);
+
+        frameDataLossGenerator.enable(
+            (bytes) ->
+            {
+                final byte[] payload = new byte[bytes.length - DataHeaderFlyweight.HEADER_LENGTH];
+                System.arraycopy(bytes, DataHeaderFlyweight.HEADER_LENGTH, payload, 0, payload.length);
+                if (Arrays.equals(payload, secondHalfOfMessage))
+                {
+                    keepDroppingAfterMatch.set(true);
+                }
+                return keepDroppingAfterMatch.get();
+            }
+        );
+        persistentPublication.publish(List.of(largeMessage));
+
+        persistentSubscriptionCtx
+            .liveChannel(MDC_SUBSCRIPTION_CHANNEL)
+            .liveStreamId(STREAM_ID)
+            .recordingId(persistentPublication.recordingId())
+            .startPosition(FROM_START);
+
+        try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
+        {
+            executeUntil(persistentSubscription::isReplaying,
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+
+            assertEquals(0, fragmentHandler.receivedPayloads.size());
+
+            executeUntil(persistentSubscription::isLive,
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+
+            assertEquals(0, fragmentHandler.receivedPayloads.size());
+
+            frameDataLossGenerator.disable();
+
+            executeUntil(() -> fragmentHandler.hasReceivedPayloads(1),
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+
+            assertPayloads(fragmentHandler.receivedPayloads, List.of(largeMessage));
+        }
+    }
+
+    @Test
     @InterruptAfter(60)
     void canJoinLiveWhenLiveAndReplayAreAdvancing() throws Exception
     {
@@ -1969,19 +2048,15 @@ class PersistentSubscriptionTest
     {
         final String aeron2Dir = CommonContext.generateRandomDirName();
 
-        final MediaDriver.Context driver2Ctx = driverCtxTpl.clone()
+        final MediaDriver.Context driver2CtxTpl = driverCtxTpl.clone()
             .aeronDirectoryName(aeron2Dir)
             .imageLivenessTimeoutNs(TimeUnit.SECONDS.toNanos(2));
 
-        final TestMediaDriver mediaDriver2 = TestMediaDriver.launch(driver2Ctx, systemTestWatcher);
+        final TestMediaDriver mediaDriver2 = TestMediaDriver.launch(driver2CtxTpl.clone(), systemTestWatcher);
         addCloseable(mediaDriver2);
-        systemTestWatcher.dataCollector().add(driver2Ctx.aeronDirectory());
+        systemTestWatcher.dataCollector().add(driver2CtxTpl.aeronDirectory());
 
-        final Aeron.Context aeron2Ctx = aeronCtxTpl.clone()
-            .aeronDirectoryName(aeron2Dir);
-
-        final Aeron aeron2 = Aeron.connect(aeron2Ctx);
-        addCloseable(aeron2);
+        final Aeron aeron2 = addCloseable(Aeron.connect(aeronCtxTpl.clone().aeronDirectoryName(aeron2Dir)));
 
         final String archiveControlRequestChannel = "aeron:udp?endpoint=localhost:8011";
         final File remoteArchiveDir = new File(SystemUtil.tmpDirName(), "remoteArchiveDir");
@@ -2035,8 +2110,9 @@ class PersistentSubscriptionTest
             archive.close();
             aeron2.close();
             mediaDriver2.close();
-            addCloseable(TestMediaDriver.launch(driver2Ctx.clone(), systemTestWatcher));
-            addCloseable(Aeron.connect(aeron2Ctx.clone()));
+            addCloseable(TestMediaDriver.launch(driver2CtxTpl.clone(), systemTestWatcher));
+
+            addCloseable(Aeron.connect(aeronCtxTpl.clone().aeronDirectoryName(aeron2Dir)));
             addCloseable(Archive.launch(remoteArchiveCtx.clone()));
 
             executeUntil(
@@ -2056,6 +2132,13 @@ class PersistentSubscriptionTest
         return (udpChannel, dispatcher, statusIndicator, context) ->
             new DebugReceiveChannelEndpoint(
                 udpChannel, dispatcher, statusIndicator, context, lossGenerator, lossGenerator);
+    }
+
+    private static SendChannelEndpointSupplier sendChannelEndpointSupplier(final LossGenerator lossGenerator)
+    {
+        return (udpChannel, statusIndicator, context) ->
+            new DebugSendChannelEndpoint(
+                udpChannel, statusIndicator, context, lossGenerator, lossGenerator);
     }
 
     private static void interruptAndJoin(final Thread thread) throws InterruptedException
