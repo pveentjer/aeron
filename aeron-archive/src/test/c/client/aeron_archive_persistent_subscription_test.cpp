@@ -2183,3 +2183,31 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldHandleReplayImageBecomingUn
     shouldHandleReplayImageBecomingUnavailable(12);
 }
 #endif
+
+// Verifies that closing a persistent subscription with an externally provided client
+// doesn't close the client when the persistent subscription is closed
+TEST_F(AeronArchivePersistentSubscriptionTest, shouldCloseContextWhenClosingSubscriptionWithExternalAeronClient)
+{
+    TestArchive archive = createArchive(m_aeronDir);
+
+    PersistentPublication persistent_publication(m_aeronDir, IPC_CHANNEL, STREAM_ID);
+
+    AeronResource aeron(m_aeronDir);
+
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
+        aeron.aeron(),
+        createArchiveContext(),
+        persistent_publication.recordingId());
+
+    aeron_archive_persistent_subscription_t *persistent_subscription;
+
+    printf("create persistent subscription\n");
+    fflush(stdout);
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+    // Close the persistent subscription
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
+
+    // Ensure that the externally supplied Aeron instance isn't closed
+    ASSERT_FALSE(aeron_is_closed(aeron.aeron()));
+}
