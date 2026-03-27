@@ -44,6 +44,7 @@ import org.agrona.concurrent.NanoClock;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 
+import static io.aeron.AeronCounters.PERSISTENT_SUBSCRIPTION_JOIN_ERROR_TYPE_ID;
 import static io.aeron.AeronCounters.PERSISTENT_SUBSCRIPTION_STATE_TYPE_ID;
 import static io.aeron.CommonContext.ENDPOINT_PARAM_NAME;
 import static io.aeron.archive.client.AeronArchive.NULL_POSITION;
@@ -110,6 +111,7 @@ public final class PersistentSubscription implements AutoCloseable
     private long nextLivePosition = Aeron.NULL_VALUE;
     private long position;
     private final Counter stateCounter;
+    private final Counter joinErrorCounter;
 
     private PersistentSubscription(final Context ctx)
     {
@@ -129,7 +131,8 @@ public final class PersistentSubscription implements AutoCloseable
         asyncAeronArchive = new AsyncAeronArchive(ctx.aeronArchiveContext().aeron(aeron), new ArchiveListener());
         messageTimeoutNs = ctx.aeronArchiveContext().messageTimeoutNs();
         position = ctx.startPosition;
-        stateCounter = ctx.stateCounter();
+        stateCounter = ctx.stateCounter;
+        joinErrorCounter = ctx.joinErrorCounter;
 
         state = State.AWAIT_ARCHIVE_CONNECTION;
     }
@@ -417,6 +420,12 @@ public final class PersistentSubscription implements AutoCloseable
     private void setUpReplay()
     {
         joinError = Long.MIN_VALUE;
+
+        if (!joinErrorCounter.isClosed())
+        {
+            joinErrorCounter.setRelease(joinError);
+        }
+
         maxRecordedPosition.reset(listRecordingRequest.termBufferLength >> 2);
 
         state(switch (replayChannelType)
@@ -839,6 +848,7 @@ public final class PersistentSubscription implements AutoCloseable
         return 1;
     }
 
+    @SuppressWarnings("MethodLength")
     private int replay(final int fragmentLimit, final boolean controlled)
     {
         Image replayImage = this.replayImage;
@@ -912,6 +922,11 @@ public final class PersistentSubscription implements AutoCloseable
                 final long livePosition = liveImage.position();
                 final long replayPosition = replayImage.position();
                 joinError = livePosition - replayPosition;
+
+                if (!joinErrorCounter.isClosed())
+                {
+                    joinErrorCounter.setRelease(joinError);
+                }
 
                 state(State.ATTEMPT_SWITCH);
 
@@ -1143,6 +1158,11 @@ public final class PersistentSubscription implements AutoCloseable
                 liveImage = liveSubscription.imageAtIndex(0);
                 position = liveImage.position();
                 joinError = 0;
+
+                if (!joinErrorCounter.isClosed())
+                {
+                    joinErrorCounter.setRelease(joinError);
+                }
 
                 state(State.LIVE);
                 listener.onLiveJoined();
@@ -1410,6 +1430,7 @@ public final class PersistentSubscription implements AutoCloseable
         private PersistentSubscriptionListener listener = null;
         private AeronArchive.Context aeronArchiveContext = null;
         private Counter stateCounter = null;
+        private Counter joinErrorCounter = null;
 
         /**
          * Perform a shallow copy of the object.
@@ -1431,6 +1452,7 @@ public final class PersistentSubscription implements AutoCloseable
         /**
          * Conclude configuration by setting up defaults when specifics are not provided.
          */
+        @SuppressWarnings("MethodLength")
         public void conclude()
         {
             if ((boolean)IS_CONCLUDED_VH.getAndSet(this, true))
@@ -1514,8 +1536,28 @@ public final class PersistentSubscription implements AutoCloseable
 
             if (null == stateCounter)
             {
-                stateCounter = allocateStateCounter(aeron, "Persistent Subscription State",
-                    PERSISTENT_SUBSCRIPTION_STATE_TYPE_ID, replayStreamId, liveStreamId, replayChannel, liveChannel);
+                stateCounter = allocatePersistentSubscriptionCounter(
+                  aeron,
+                  "Persistent Subscription State",
+                  PERSISTENT_SUBSCRIPTION_STATE_TYPE_ID,
+                  replayStreamId,
+                  liveStreamId,
+                  replayChannel,
+                  liveChannel
+                );
+            }
+
+            if (null == joinErrorCounter)
+            {
+                joinErrorCounter = allocatePersistentSubscriptionCounter(
+                  aeron,
+                  "Persistent Subscription Join Error",
+                  PERSISTENT_SUBSCRIPTION_JOIN_ERROR_TYPE_ID,
+                  replayStreamId,
+                  liveStreamId,
+                  replayChannel,
+                  liveChannel
+                );
             }
         }
 
@@ -1716,7 +1758,7 @@ public final class PersistentSubscription implements AutoCloseable
         }
 
         /**
-         * Set the {@link io.aeron.archive.client.AeronArchive.Context} that should be used for communicating with an
+         * Set the {@link AeronArchive.Context} that should be used for communicating with an
          * Archive.
          *
          * @param aeronArchiveContext that should be used for communicating with an Archive.
@@ -1729,10 +1771,10 @@ public final class PersistentSubscription implements AutoCloseable
         }
 
         /**
-         * Get the {@link io.aeron.archive.client.AeronArchive.Context} that should be used for communicating with an
+         * Get the {@link AeronArchive.Context} that should be used for communicating with an
          * Archive.
          *
-         * @return the {@link io.aeron.archive.client.AeronArchive.Context} that should be used for communicating
+         * @return the {@link AeronArchive.Context} that should be used for communicating
          * with an Archive.
          */
         public AeronArchive.Context aeronArchiveContext()
@@ -1756,11 +1798,38 @@ public final class PersistentSubscription implements AutoCloseable
          * Get the counter for the current state of the {@code PersistentSubscription}.
          *
          * @return the counter for the current state of the {@code PersistentSubscription}.
-         * @see PersistentSubscription.State
+         * @see State
          */
         public Counter stateCounter()
         {
             return stateCounter;
+        }
+
+        /**
+         * Set the counter for the {@code PersistentSubscription}'s join error.
+         * This represents the difference between the subscription's position in the replay and the position it joined
+         * live.
+         * When the subscription is not consuming from live, the value of this counter will be {@code Long.MIN_VALUE}.
+         *
+         * @param joinErrorCounter the counter for the {@code PersistentSubscription}'s join error.
+         * @return this for a fluent API.
+         */
+        public Context joinErrorCounter(final Counter joinErrorCounter)
+        {
+            this.joinErrorCounter = joinErrorCounter;
+            return this;
+        }
+
+        /**
+         * Get the counter for the {@code PersistentSubscription}'s join error.
+         * This represents the difference between the subscription's position in the replay and the position it joined
+         * live.
+         * When the subscription is not consuming from live, the value of this counter will be {@code Long.MIN_VALUE}.
+         * @return the counter for the {@code PersistentSubscription}'s join error.
+         */
+        public Counter joinErrorCounter()
+        {
+            return joinErrorCounter;
         }
 
         /**
@@ -1776,7 +1845,7 @@ public final class PersistentSubscription implements AutoCloseable
             }
             else if (!aeron.isClosed())
             {
-                CloseHelper.close(stateCounter);
+                CloseHelper.closeAll(stateCounter, joinErrorCounter);
             }
         }
     }
@@ -1995,7 +2064,7 @@ public final class PersistentSubscription implements AutoCloseable
         }
     }
 
-    private static Counter allocateStateCounter(
+    private static Counter allocatePersistentSubscriptionCounter(
         final Aeron aeron,
         final String name,
         final int typeId,

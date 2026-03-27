@@ -20,12 +20,15 @@ import io.aeron.Counter;
 import io.aeron.exceptions.ConcurrentConcludeException;
 import io.aeron.exceptions.ConfigurationException;
 
+import org.agrona.concurrent.status.CountersManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import io.aeron.test.CountersAnswer;
+import io.aeron.test.Tests;
 import java.util.stream.Stream;
 
 import static io.aeron.CommonContext.IPC_CHANNEL;
@@ -35,7 +38,10 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class PersistentSubscriptionContextTest
 {
@@ -247,5 +253,16 @@ class PersistentSubscriptionContextTest
 
         assertNotSame(nullStateCounter, context.stateCounter());
         assertNotNull(context.stateCounter());
+    }
+
+    @Test
+    void contextShouldCreateJoinErrorCounterIfNoneProvided()
+    {
+        final Counter nullJoinErrorCounter = null;
+        context.stateCounter(nullJoinErrorCounter);
+        context.conclude();
+
+        assertNotSame(nullJoinErrorCounter, context.joinErrorCounter());
+        assertNotNull(context.joinErrorCounter());
     }
 }
