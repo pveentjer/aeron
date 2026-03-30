@@ -106,6 +106,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
@@ -155,11 +156,12 @@ class PersistentSubscriptionTest
     private BufferingFragmentHandler fragmentHandler;
     private Archive.Context archiveCtx;
     private AeronArchive.Context aeronArchiveContext;
+    private String aeronDirectoryName;
 
     @BeforeEach
     void setUp()
     {
-        final String aeronDirectoryName = CommonContext.generateRandomDirName();
+        aeronDirectoryName = CommonContext.generateRandomDirName();
 
         final MediaDriver.Context driverCtx = driverCtxTpl.clone()
             .aeronDirectoryName(aeronDirectoryName);
@@ -315,6 +317,34 @@ class PersistentSubscriptionTest
         persistentSubscriptionCtx
             .recordingId(persistentPublication.recordingId())
             .startPosition(startPosition);
+
+        try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
+        {
+            executeUntil(persistentSubscription::hasFailed, () -> persistentSubscription.controlledPoll(null, 1));
+
+            assertEquals(1, listener.errorCount);
+            assertEquals(
+                Reason.INVALID_START_POSITION,
+                ((PersistentSubscriptionException)listener.lastException).reason()
+            );
+        }
+    }
+
+    @Test
+    @InterruptAfter(10)
+    void replayStartPositionMustNotBeTheSameAsTheRecordingStopPosition()
+    {
+        final PersistentPublication persistentPublication =
+            PersistentPublication.create(aeronArchive, IPC_CHANNEL, STREAM_ID);
+
+        persistentPublication.persist(generateFixedPayloads(1, ONE_KB_MESSAGE_SIZE));
+
+        final long stopPosition = persistentPublication.stop();
+        assertTrue(stopPosition > 0);
+
+        persistentSubscriptionCtx
+            .recordingId(persistentPublication.recordingId())
+            .startPosition(stopPosition);
 
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
@@ -943,7 +973,8 @@ class PersistentSubscriptionTest
 
         final CountingFragmentHandler fastSubscriptionFragmentHandler = new CountingFragmentHandler();
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx);
-            Subscription fastSubscription = aeron.addSubscription(channelUriStringBuilder.tether(true).build(), STREAM_ID))
+            Subscription fastSubscription = aeron.addSubscription(channelUriStringBuilder.tether(true)
+                .build(), STREAM_ID))
         {
             Tests.awaitConnected(fastSubscription);
 
@@ -1549,12 +1580,6 @@ class PersistentSubscriptionTest
         }
     }
 
-    private enum ArchiveStoppedScenario
-    {
-        archive_stopped,
-        archive_stopped_and_recording_purged
-    }
-
     @InterruptAfter(10)
     @Test
     void canFallbackToReplayAfterStartingFromLive()
@@ -2099,6 +2124,56 @@ class PersistentSubscriptionTest
             );
             assertPayloads(fragmentHandler.receivedPayloads, payloads1, payloads64, payloads1);
         }
+    }
+
+    @Test
+    @InterruptAfter(5)
+    void shouldCreateOwnAeronInstanceWhenNotSupplied()
+    {
+        final PersistentPublication persistentPublication = PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
+        persistentPublication.persist(generateRandomPayloads(2));
+
+        PersistentSubscription.Context persistentSubscriptionCtx = new PersistentSubscription.Context()
+            .aeronDirectoryName(aeronDirectoryName)
+            .recordingId(persistentPublication.recordingId)
+            .startPosition(FROM_START)
+            .liveChannel(MDC_SUBSCRIPTION_CHANNEL)
+            .liveStreamId(STREAM_ID)
+            .replayChannel("aeron:udp?endpoint=localhost:0")
+            .replayStreamId(-5)
+            .listener(listener)
+            .aeronArchiveContext(aeronArchiveContext);
+
+        final PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx);
+        executeUntil(
+            persistentSubscription::isLive,
+            () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+        final Aeron aeron = persistentSubscriptionCtx.aeron();
+        assertNotNull(aeron);
+        persistentSubscription.close();
+        assertTrue(aeron.isClosed());
+    }
+
+    @Test
+    @InterruptAfter(5)
+    void shouldNotCloseSuppliedAeronInstance()
+    {
+        final PersistentPublication persistentPublication = PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
+        persistentPublication.persist(generateRandomPayloads(2));
+
+        final PersistentSubscription.Context persistentSubscriptionCtx = this.persistentSubscriptionCtx.clone()
+            .aeron(aeron)
+            .recordingId(persistentPublication.recordingId)
+            .startPosition(FROM_START)
+            .liveChannel(MDC_SUBSCRIPTION_CHANNEL)
+            .aeronArchiveContext(aeronArchiveContext);
+
+        final PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx);
+        executeUntil(
+            persistentSubscription::isLive,
+            () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+        persistentSubscription.close();
+        assertFalse(aeron.isClosed());
     }
 
     private static ReceiveChannelEndpointSupplier receiveChannelEndpointSupplier(final LossGenerator lossGenerator)
