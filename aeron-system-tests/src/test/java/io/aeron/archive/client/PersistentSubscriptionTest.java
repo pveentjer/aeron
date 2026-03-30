@@ -136,6 +136,7 @@ class PersistentSubscriptionTest
         .ipcTermBufferLength(TERM_LENGTH)
         .dirDeleteOnShutdown(true)
         .imageLivenessTimeoutNs(TimeUnit.SECONDS.toNanos(2))
+        .timerIntervalNs(TimeUnit.MILLISECONDS.toNanos(100))
         .untetheredWindowLimitTimeoutNs(TimeUnit.SECONDS.toNanos(1))
         .untetheredLingerTimeoutNs(TimeUnit.SECONDS.toNanos(1))
         .publicationLingerTimeoutNs(TimeUnit.SECONDS.toNanos(1))
