@@ -777,61 +777,85 @@ class PersistentSubscriptionTest
         }
     }
 
-    @ParameterizedTest
-    @ValueSource(ints = { 1, 10 })
+    @Test
     @InterruptAfter(5)
-    void shouldCatchupOnReplayBeforeSwitchingToLive(final int fragmentLimit)
+    void canJoinLiveWhenLivePositionIsAheadOfReplayPosition()
     {
-        final PersistentPublication persistentPublication =
-            PersistentPublication.create(aeronArchive, IPC_CHANNEL, STREAM_ID);
+        final PersistentPublication persistentPublication = PersistentPublication.create(
+            aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID
+        );
 
-        final List<byte[]> payloads = generateRandomPayloads(5);
-        persistentPublication.persist(payloads);
+        final StreamIdLossGenerator streamIdFrameDataLossGenerator = new StreamIdLossGenerator();
+
+        final MediaDriver.Context driver2Ctx = driverCtxTpl.clone()
+            .aeronDirectoryName(CommonContext.generateRandomDirName())
+            .receiveChannelEndpointSupplier(receiveChannelEndpointSupplier(streamIdFrameDataLossGenerator));
+
+        addCloseable(TestMediaDriver.launch(driver2Ctx, systemTestWatcher));
+        final Aeron aeron = addCloseable(
+            Aeron.connect(new Aeron.Context().aeronDirectoryName(driver2Ctx.aeronDirectoryName()))
+        );
+        systemTestWatcher.dataCollector().add(driver2Ctx.aeronDirectory());
 
         persistentSubscriptionCtx
+            .aeron(aeron)
+            .liveChannel(MDC_SUBSCRIPTION_CHANNEL)
             .recordingId(persistentPublication.recordingId());
+
+        final List<byte[]> messagesToConsumeOnReplay = generateFixedPayloads(5, ONE_KB_MESSAGE_SIZE);
+        persistentPublication.persist(messagesToConsumeOnReplay);
 
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
-            executeUntil(() -> fragmentHandler.hasReceivedPayloads(1),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+            // Start consuming messages over replay.
+            executeUntil(
+                () -> fragmentHandler.hasReceivedPayloads(1),
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 1)
+            );
+            executeUntil(
+                () -> fragmentHandler.hasReceivedPayloads(persistentPublication.publishedMessageCount()),
+                () -> {
+                    persistentSubscription.controlledPoll(fragmentHandler, 1);
+                    assertTrue(persistentSubscription.isReplaying());
+                }
+            );
 
-            assertEquals(1, archive.context().replaySessionCounter().get());
-            assertTrue(persistentSubscription.isReplaying());
+            // Stop the replay from advancing
+            streamIdFrameDataLossGenerator.enable(persistentSubscriptionCtx.replayStreamId());
 
-            final List<byte[]> payloads2 = generateRandomPayloads(25);
-            persistentPublication.persist(payloads2);
+            // Continue sending messages so the live position advances ahead of the replay.
+            final List<byte[]> messagesToConsumeAfterAddingLive = generateFixedPayloads(2, ONE_KB_MESSAGE_SIZE);
+            persistentPublication.publish(messagesToConsumeAfterAddingLive);
 
-            executeUntil(() -> fragmentHandler.hasReceivedPayloads(payloads.size() + payloads2.size()),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, fragmentLimit));
+            // Poll the Persistent Subscription until it has added the live channel.
+            executeUntil(
+                () -> persistentSubscription.joinError() != Long.MIN_VALUE,
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+            );
 
-            executeUntil(persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, fragmentLimit));
-
-            assertEquals(1, listener.liveJoinedCount);
-
-            assertEquals(payloads.size() + payloads2.size(), fragmentHandler.receivedPayloads.size());
-
-            // send some more messages
-            final List<byte[]> payloads3 = generateRandomPayloads(5);
-            persistentPublication.persist(payloads3);
+            // Allow the persistent subscription to continue consuming over replay, and then join live.
+            streamIdFrameDataLossGenerator.disable();
 
             executeUntil(
-                () -> fragmentHandler.hasReceivedPayloads(payloads.size() + payloads2.size() + payloads3.size()),
-                () ->
-                {
-                    persistentSubscription.controlledPoll(fragmentHandler, fragmentLimit);
+                () -> fragmentHandler.hasReceivedPayloads(persistentPublication.publishedMessageCount()) &&
+                    persistentSubscription.isLive(),
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+            );
 
-                    // expect remaining messages to be consumed on live channel
-                    assertTrue(persistentSubscription.isLive());
-                });
+            // Verify the live position was added ahead of the replay position.
+            assertEquals(2048, persistentSubscription.joinError());
 
+            final List<byte[]> messagesToConsumeOnLive = generateFixedPayloads(2, ONE_KB_MESSAGE_SIZE);
+            persistentPublication.publish(messagesToConsumeOnLive);
+            executeUntil(
+                () -> fragmentHandler.hasReceivedPayloads(persistentPublication.publishedMessageCount()),
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+            );
             assertTrue(persistentSubscription.isLive());
-            assertFalse(persistentSubscription.isReplaying());
-//          assertThat(persistentSubscription.joinError(), greaterThan(0L)); // TODO this test does not guarantee this.
-            assertPayloads(fragmentHandler.receivedPayloads, payloads, payloads2, payloads3);
-
-            Tests.await(() -> archive.context().replaySessionCounter().get() == 0);
+            assertPayloads(
+                fragmentHandler.receivedPayloads,
+                messagesToConsumeOnReplay, messagesToConsumeAfterAddingLive, messagesToConsumeOnLive
+            );
         }
     }
 
