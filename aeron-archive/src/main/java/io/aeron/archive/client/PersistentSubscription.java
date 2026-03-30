@@ -92,7 +92,7 @@ public final class PersistentSubscription implements AutoCloseable
     private boolean liveImageDeadlineBreached;
     private Image liveImage;
     private ControlledFragmentHandler controlledFragmentHandler;
-    private long joinError;
+    private long joinError = Long.MIN_VALUE;
     private long nextLivePosition = Aeron.NULL_VALUE;
     private long position;
 
