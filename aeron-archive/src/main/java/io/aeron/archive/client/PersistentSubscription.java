@@ -340,15 +340,15 @@ public final class PersistentSubscription implements AutoCloseable
                 {
                     return new PersistentSubscriptionException(
                         PersistentSubscriptionException.Reason.INVALID_START_POSITION,
-                        "Requested position: " + position + " is lower than start position: " +
+                        "Requested start position: " + position + " cannot be lower than recording start position: " +
                         listRecordingRequest.startPosition + " for recording: " + recordingId);
                 }
 
-                if (listRecordingRequest.stopPosition != NULL_POSITION && position > listRecordingRequest.stopPosition)
+                if (listRecordingRequest.stopPosition != NULL_POSITION && position >= listRecordingRequest.stopPosition)
                 {
                     return new PersistentSubscriptionException(
                         PersistentSubscriptionException.Reason.INVALID_START_POSITION,
-                        "Requested position: " + position + " is greater than stop position: " +
+                        "Requested start position: " + position + " must be lower than highest recorded position: " +
                         listRecordingRequest.stopPosition + " for recording: " + recordingId);
                 }
             }
