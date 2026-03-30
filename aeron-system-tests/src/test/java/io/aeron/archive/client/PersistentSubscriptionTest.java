@@ -1433,7 +1433,7 @@ class PersistentSubscriptionTest
                 () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
 
             final List<byte[]> newMessages = generateFixedPayloads(16, ONE_KB_MESSAGE_SIZE);
-            persistentPublication.publish(newMessages); // TODO can this be persist
+            persistentPublication.publish(newMessages);
 
             executeUntil(() -> fragmentHandler.hasReceivedPayloads(oldMessages.size() + newMessages.size()),
                 () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
@@ -2426,7 +2426,6 @@ class PersistentSubscriptionTest
 
         public void onError(final Exception e)
         {
-            System.out.println("e = " + e);
             errorCount++;
             lastException = e;
         }
