@@ -1043,6 +1043,8 @@ class PersistentSubscriptionTest
     @InterruptAfter(10)
     void canFallbackToReplayInTheMiddleOfAFragmentedMessage()
     {
+        TestMediaDriver.notSupportedOnCMediaDriver("loss generator");
+
         final PersistentPublication persistentPublication =
             PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
 
@@ -1120,6 +1122,8 @@ class PersistentSubscriptionTest
     @InterruptAfter(10)
     void canJoinLiveInTheMiddleOfAFragmentedMessage()
     {
+        TestMediaDriver.notSupportedOnCMediaDriver("loss generator");
+
         final int maxPayloadLength = driver.context().mtuLength() - DataHeaderFlyweight.HEADER_LENGTH;
         final byte[] firstHalfOfMessage = new byte[maxPayloadLength];
         Arrays.fill(firstHalfOfMessage, (byte)1);
@@ -2014,6 +2018,7 @@ class PersistentSubscriptionTest
 
             executeUntil(persistentSubscription::isLive, pollSubscription);
 
+            assertEquals(0, fragmentHandler.receivedPayloads.size());
             assertEquals(1, listener.liveJoinedCount);
             assertEquals(0, listener.liveLeftCount);
 
@@ -2028,6 +2033,7 @@ class PersistentSubscriptionTest
 
             executeUntil(persistentSubscription::isLive, pollSubscription);
 
+            assertEquals(0, fragmentHandler.receivedPayloads.size());
             assertEquals(2, listener.liveJoinedCount);
             assertEquals(1, listener.liveLeftCount);
 
