@@ -39,8 +39,19 @@ extern "C"
 #define ARCHIVE_ERROR_CODE_STORAGE_SPACE (11)
 #define ARCHIVE_ERROR_CODE_UNKNOWN_REPLICATION (12)
 #define ARCHIVE_ERROR_CODE_UNAUTHORISED_ACTION (13)
-#define ARCHIVE_REPLAY_ALL_AND_FOLLOW (-1)
+
 #define AERON_NULL_POSITION AERON_NULL_VALUE
+
+/**
+ * When replaying a live recording, replay the whole stream and follow the live recording. This will behave the
+ * same way as providing AERON_NULL_VALUE
+ */
+#define ARCHIVE_REPLAY_ALL_AND_FOLLOW (-1)
+
+/**
+ * When replaying a live recording, replay up to the current limit then stop the replay and end the stream.
+ */
+#define ARCHIVE_REPLAY_ALL_AND_STOP (-2)
 
 typedef struct aeron_archive_stct aeron_archive_t;
 typedef struct aeron_archive_context_stct aeron_archive_context_t;
