@@ -157,8 +157,8 @@ class PersistentSubscriptionTest
     private AeronArchive aeronArchive;
     private PersistentSubscriptionListenerImpl listener;
     private BufferingFragmentHandler fragmentHandler;
-    private Archive.Context archiveCtx;
-    private AeronArchive.Context aeronArchiveContext;
+    private Archive.Context archiveCtxTpl;
+    private AeronArchive.Context aeronArchiveCtxTpl;
     private String aeronDirectoryName;
 
     @BeforeEach
@@ -171,7 +171,7 @@ class PersistentSubscriptionTest
 
         archiveDir = new File(SystemUtil.tmpDirName(), "archive");
 
-        archiveCtx = TestContexts.localhostArchive()
+        archiveCtxTpl = TestContexts.localhostArchive()
             .catalogCapacity(128 * 1024)
             .segmentFileLength(TERM_LENGTH)
             .aeronDirectoryName(aeronDirectoryName)
@@ -181,13 +181,13 @@ class PersistentSubscriptionTest
 
         driver = TestMediaDriver.launch(driverCtx, systemTestWatcher);
         systemTestWatcher.dataCollector().add(driverCtx.aeronDirectory());
-        archive = Archive.launch(archiveCtx.clone());
-        systemTestWatcher.dataCollector().add(archiveCtx.archiveDir());
+        archive = Archive.launch(archiveCtxTpl.clone());
+        systemTestWatcher.dataCollector().add(archiveCtxTpl.archiveDir());
 
         aeron = Aeron.connect(aeronCtxTpl.clone().aeronDirectoryName(aeronDirectoryName));
 
-        aeronArchiveContext = TestContexts.localhostAeronArchive().aeron(aeron);
-        aeronArchive = AeronArchive.connect(aeronArchiveContext.clone());
+        aeronArchiveCtxTpl = TestContexts.localhostAeronArchive().aeron(aeron);
+        aeronArchive = AeronArchive.connect(aeronArchiveCtxTpl.clone());
 
         listener = new PersistentSubscriptionListenerImpl();
 
@@ -200,7 +200,7 @@ class PersistentSubscriptionTest
             .replayChannel("aeron:udp?endpoint=localhost:0")
             .replayStreamId(-5)
             .listener(listener)
-            .aeronArchiveContext(aeronArchiveContext);
+            .aeronArchiveContext(aeronArchiveCtxTpl.clone());
 
         fragmentHandler = new BufferingFragmentHandler();
     }
@@ -515,10 +515,10 @@ class PersistentSubscriptionTest
         // Stop the live publication.
         persistentPublication.close();
 
-        aeronArchiveContext.messageTimeoutNs(TimeUnit.MILLISECONDS.toNanos(500));
         persistentSubscriptionCtx
             .startPosition(FROM_LIVE)
-            .recordingId(recordingId);
+            .recordingId(recordingId)
+            .aeronArchiveContext().messageTimeoutNs(TimeUnit.MILLISECONDS.toNanos(500));
 
         try (final PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
@@ -1377,11 +1377,11 @@ class PersistentSubscriptionTest
 
         final String incorrectLiveChannel = "aeron:udp?control=localhost:49582|control-mode=dynamic|fc=max";
 
-        aeronArchiveContext.messageTimeoutNs(TimeUnit.MILLISECONDS.toNanos(500));
         persistentSubscriptionCtx
             .recordingId(persistentPublication.recordingId())
             .startPosition(FROM_START)
-            .liveChannel(incorrectLiveChannel);
+            .liveChannel(incorrectLiveChannel)
+            .aeronArchiveContext().messageTimeoutNs(TimeUnit.MILLISECONDS.toNanos(500));
 
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
@@ -1424,14 +1424,14 @@ class PersistentSubscriptionTest
     @ValueSource(longs = { FROM_START, FROM_LIVE })
     void shouldConnectToArchiveWhenItBecomesAvailable(final long startPosition, @TempDir Path tempDir )
     {
-        this.archive.close();
+        archive.close();
         final File archiveDir = new File(tempDir.toString(), "testLocalArchive");
-        final Archive.Context archiveCtx = this.archiveCtx.clone()
+        final Archive.Context localArchiveCtxTpl = archiveCtxTpl.clone()
             .archiveDir(archiveDir)
             .deleteArchiveOnStart(false);
-        final Archive archive = addCloseable(Archive.launch(archiveCtx.clone()));
+        final Archive archive = addCloseable(Archive.launch(localArchiveCtxTpl.clone()));
 
-        final AeronArchive aeronArchive = addCloseable(AeronArchive.connect(aeronArchiveContext.clone()));
+        final AeronArchive aeronArchive = addCloseable(AeronArchive.connect(aeronArchiveCtxTpl.clone()));
         assert aeronArchive != null;
 
         final PersistentPublication persistentPublication =
@@ -1441,17 +1441,17 @@ class PersistentSubscriptionTest
 
         archive.close();
 
-        aeronArchiveContext.messageTimeoutNs(TimeUnit.MILLISECONDS.toNanos(500));
         persistentSubscriptionCtx
             .recordingId(persistentPublication.recordingId())
             .startPosition(startPosition)
-            .liveChannel(MDC_SUBSCRIPTION_CHANNEL);
+            .liveChannel(MDC_SUBSCRIPTION_CHANNEL)
+            .aeronArchiveContext().messageTimeoutNs(TimeUnit.MILLISECONDS.toNanos(500));;
 
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
             executeUntil(() -> listener.errorCount > 1, () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
             assertEquals(TimeoutException.class, listener.lastException.getClass());
-            addCloseable(Archive.launch(archiveCtx.clone()));
+            addCloseable(Archive.launch(localArchiveCtxTpl.clone()));
             executeUntil(persistentSubscription::isLive, () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
         }
     }
@@ -1471,11 +1471,10 @@ class PersistentSubscriptionTest
         final Subscription subscription = addCloseable(aeron.addSubscription(MDC_SUBSCRIPTION_CHANNEL, STREAM_ID));
 
         persistentSubscriptionCtx
-            .aeronArchiveContext(aeronArchiveContext.clone()
-                .messageTimeoutNs(TimeUnit.SECONDS.toNanos(3)))
             .recordingId(persistentPublication.recordingId)
             .startPosition(FROM_START)
-            .liveChannel(MDC_SUBSCRIPTION_CHANNEL);
+            .liveChannel(MDC_SUBSCRIPTION_CHANNEL)
+            .aeronArchiveContext().messageTimeoutNs(TimeUnit.SECONDS.toNanos(3));
 
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
@@ -1545,11 +1544,11 @@ class PersistentSubscriptionTest
         persistentPublication.close();
         Tests.await(() -> !persistentPublication.publicationCountersExist());
 
-        aeronArchiveContext.messageTimeoutNs(TimeUnit.MILLISECONDS.toNanos(500));
         final long recordingId = persistentPublication.recordingId();
         persistentSubscriptionCtx
             .liveChannel(MDC_SUBSCRIPTION_CHANNEL)
-            .recordingId(recordingId);
+            .recordingId(recordingId)
+            .aeronArchiveContext().messageTimeoutNs(TimeUnit.MILLISECONDS.toNanos(500));
 
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
@@ -2117,7 +2116,7 @@ class PersistentSubscriptionTest
         final String archiveControlRequestChannel = "aeron:udp?endpoint=localhost:8011";
         final File remoteArchiveDir = new File(tempDir.toString(), "remoteArchiveDir");
 
-        final Archive.Context remoteArchiveCtx = archiveCtx.clone()
+        final Archive.Context remoteArchiveCtx = archiveCtxTpl.clone()
             .archiveDir(remoteArchiveDir)
             .aeronDirectoryName(aeron2Dir)
             .controlChannel(archiveControlRequestChannel)
@@ -2126,7 +2125,7 @@ class PersistentSubscriptionTest
         final Archive archive = addCloseable(Archive.launch(remoteArchiveCtx.clone()));
         systemTestWatcher.dataCollector().add(remoteArchiveCtx.archiveDir());
 
-        final AeronArchive.Context remoteAeronArchiveCtx = aeronArchiveContext.clone()
+        final AeronArchive.Context remoteAeronArchiveCtx = aeronArchiveCtxTpl.clone()
             .controlRequestChannel(archiveControlRequestChannel)
             .aeron(aeron2);
 
@@ -2233,7 +2232,7 @@ class PersistentSubscriptionTest
             .replayChannel("aeron:udp?endpoint=localhost:0")
             .replayStreamId(-5)
             .listener(listener)
-            .aeronArchiveContext(aeronArchiveContext);
+            .aeronArchiveContext(aeronArchiveCtxTpl.clone());
 
         final PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx);
         executeUntil(
@@ -2257,7 +2256,7 @@ class PersistentSubscriptionTest
             .recordingId(persistentPublication.recordingId)
             .startPosition(FROM_START)
             .liveChannel(MDC_SUBSCRIPTION_CHANNEL)
-            .aeronArchiveContext(aeronArchiveContext);
+            .aeronArchiveContext(aeronArchiveCtxTpl.clone());
 
         final PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx);
         executeUntil(
