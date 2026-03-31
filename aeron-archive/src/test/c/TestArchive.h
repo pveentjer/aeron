@@ -241,7 +241,7 @@ public:
                 }
             }
 
-            if (archive_terminated && aeron_is_directory(m_archiveDir.c_str()) >= 0)
+            if (m_deleteDirOnTearDown && archive_terminated && aeron_is_directory(m_archiveDir.c_str()) >= 0)
             {
                 m_stream << aeron_epoch_clock() << " [TearDown] Deleting " << m_archiveDir << std::endl;
                 if (aeron_delete_directory(m_archiveDir.c_str()) != 0)
@@ -253,6 +253,11 @@ public:
         }
     }
 
+    void deleteDirOnTearDown(const bool deleteDirOnTearDown)
+    {
+        m_deleteDirOnTearDown = deleteDirOnTearDown;
+    }
+
 private:
     const std::string m_java = JAVA_EXECUTABLE;          // Defined in CMakeLists.txt
     const std::string m_aeronAllJar = AERON_ALL_JAR;     // Defined in CMakeLists.txt
@@ -262,6 +267,7 @@ private:
     std::ostream &m_stream;
     pid_t m_process_handle = -1;
     pid_t m_pid = 0;
+    bool m_deleteDirOnTearDown = true;
 };
 
 #endif //AERON_TESTARCHIVE_H
