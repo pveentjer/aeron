@@ -956,14 +956,13 @@ static bool validate_descriptor(aeron_archive_persistent_subscription_t *persist
                     persistent_subscription->listener.on_error(
                         persistent_subscription->listener.clientd,
                         EINVAL,
-                        "Requested position is lower than start position of recording");
+                        "Requested started position is lower than start position of the recording");
                 }
 
                 return false;
             }
 
-            if (req->stop_position != AERON_NULL_VALUE &&
-                persistent_subscription->position > req->stop_position)
+            if (req->stop_position != AERON_NULL_VALUE && persistent_subscription->position >= req->stop_position)
             {
                 transition(persistent_subscription, FAILED);
 
@@ -972,7 +971,7 @@ static bool validate_descriptor(aeron_archive_persistent_subscription_t *persist
                     persistent_subscription->listener.on_error(
                         persistent_subscription->listener.clientd,
                         EINVAL,
-                        "Requested position is greater than stop position of recording");
+                        "Requested start position must be lower than the highest recorded position for the recording");
                 }
 
                 return false;
