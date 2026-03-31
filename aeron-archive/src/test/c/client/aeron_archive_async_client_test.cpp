@@ -217,7 +217,80 @@ struct ControlResponse
     int64_t relevant_id;
     int32_t code;
     std::string error_message;
+
+    friend void PrintTo(ControlResponse *cr, std::ostream* os)
+    {
+        if (cr == nullptr)
+        {
+            *os << "NULL";
+        }
+        else
+        {
+            *os << "ControlResponse[correlation_id=" << cr->correlation_id
+                << ", relevant_id=" << cr->relevant_id
+                << ", code=" << cr->code
+                << ", error_message='" << cr->error_message << "']";
+        }
+    }
 };
+
+class ControlResponseIsOkMatcher
+{
+public:
+    using is_gtest_matcher = void;
+
+    explicit ControlResponseIsOkMatcher(int64_t correlationId)
+        : m_correlationId(correlationId), m_matchRelevantId(false), m_relevantId(0)
+    {
+    }
+
+    explicit ControlResponseIsOkMatcher(int64_t correlationId, int64_t relevantId)
+        : m_correlationId(correlationId), m_matchRelevantId(true), m_relevantId(relevantId)
+    {
+    }
+
+    bool MatchAndExplain(ControlResponse* cr, std::ostream*) const
+    {
+        return cr != nullptr &&
+            cr->code == aeron_archive_client_controlResponseCode_OK &&
+            cr->correlation_id == m_correlationId &&
+            (!m_matchRelevantId || cr->relevant_id == m_relevantId) &&
+            cr->error_message.empty();
+    }
+
+    void DescribeTo(std::ostream* os) const
+    {
+        *os << "is OK with correlation_id=" << m_correlationId;
+        if (m_matchRelevantId)
+        {
+            *os << " and relevant_id=" << m_relevantId;
+        }
+    }
+
+    void DescribeNegationTo(std::ostream* os) const
+    {
+        *os << "is not OK with correlation_id=" << m_correlationId;
+        if (m_matchRelevantId)
+        {
+            *os << " and relevant_id=" << m_relevantId;
+        }
+    }
+
+private:
+    int64_t m_correlationId;
+    bool m_matchRelevantId;
+    int64_t m_relevantId;
+};
+
+testing::Matcher<ControlResponse*> IsOk(int64_t correlationId)
+{
+    return ControlResponseIsOkMatcher(correlationId);
+}
+
+testing::Matcher<ControlResponse*> IsOk(int64_t correlationId, int64_t relevantId)
+{
+    return ControlResponseIsOkMatcher(correlationId, relevantId);
+}
 
 struct RecordingDescriptor
 {
@@ -483,10 +556,7 @@ TEST_F(AeronArchiveAsyncClientTest, testAeronArchiveAsyncClient)
 
         ASSERT_TRUE(aeron_archive_async_client_try_send_max_recorded_position_request(client, 5, recording_id));
         auto controlResponse5 = pollUntilControlResponseReceived(client, listener, 5);
-        ASSERT_EQ(5, controlResponse5->correlation_id);
-        ASSERT_EQ(stop_position, controlResponse5->relevant_id);
-        ASSERT_EQ(aeron_archive_client_controlResponseCode_OK, controlResponse5->code);
-        ASSERT_EQ("", controlResponse5->error_message);
+        ASSERT_THAT(controlResponse5, IsOk(5, stop_position));
 
         aeron_subscription_t *subscription = addSubscription(aeron.aeron(), "aeron:udp?endpoint=localhost:0", 2000);
         ASSERT_NE(subscription, nullptr) << aeron_errmsg();
@@ -496,8 +566,7 @@ TEST_F(AeronArchiveAsyncClientTest, testAeronArchiveAsyncClient)
         aeron_archive_replay_params_init(&replay_params);
         ASSERT_TRUE(aeron_archive_async_client_try_send_replay_request(client, nullptr, 6, recording_id, uri_buffer, 2000, &replay_params));
         auto controlResponse6 = pollUntilControlResponseReceived(client, listener, 6);
-        ASSERT_EQ(6, controlResponse6->correlation_id);
-        ASSERT_EQ(aeron_archive_client_controlResponseCode_OK, controlResponse6->code);
+        ASSERT_THAT(controlResponse6, IsOk(6));
 
         const auto session_id = static_cast<int32_t>(controlResponse6->relevant_id);
         aeron_image_t* image = nullptr;
@@ -539,10 +608,7 @@ TEST_F(AeronArchiveAsyncClientTest, testAeronArchiveAsyncClient)
 
         ASSERT_TRUE(aeron_archive_async_client_try_send_max_recorded_position_request(client, 9, recording_id));
         auto controlResponse9 = pollUntilControlResponseReceived(client, listener, 9);
-        ASSERT_EQ(9, controlResponse9->correlation_id);
-        ASSERT_EQ(stop_position, controlResponse9->relevant_id);
-        ASSERT_EQ(aeron_archive_client_controlResponseCode_OK, controlResponse9->code);
-        ASSERT_EQ("", controlResponse9->error_message);
+        EXPECT_THAT(controlResponse9, IsOk(9, stop_position));
 
         ASSERT_EQ(0, aeron_archive_async_client_destroy(client));
     }
@@ -582,8 +648,7 @@ TEST_F(AeronArchiveAsyncClientTest, shouldAllowToStopReplay)
     aeron_archive_replay_params_init(&replay_params);
     ASSERT_TRUE(aeron_archive_async_client_try_send_replay_request(client, nullptr, 1, 0, "aeron:ipc", 6000, &replay_params));
     auto replayResponse = pollUntilControlResponseReceived(client, listener, 1);
-    ASSERT_EQ(1, replayResponse->correlation_id);
-    ASSERT_EQ(aeron_archive_client_controlResponseCode_OK, replayResponse->code);
+    ASSERT_THAT(replayResponse, IsOk(1));
 
     const auto session_id = static_cast<int32_t>(replayResponse->relevant_id);
     pollUntilTrue("image available", client, [&] { return aeron_subscription_image_by_session_id(subscription, session_id) != nullptr; });
@@ -591,8 +656,7 @@ TEST_F(AeronArchiveAsyncClientTest, shouldAllowToStopReplay)
 
     ASSERT_TRUE(aeron_archive_async_client_try_send_stop_replay_request(client, 2, replayResponse->relevant_id));
     auto stopReplayResponse = pollUntilControlResponseReceived(client, listener, 2);
-    ASSERT_EQ(2, stopReplayResponse->correlation_id);
-    ASSERT_EQ(aeron_archive_client_controlResponseCode_OK, stopReplayResponse->code);
+    ASSERT_THAT(stopReplayResponse, IsOk(2));
 
     pollUntilTrue("EOS", client, [&] { return aeron_image_is_end_of_stream(image); });
 
