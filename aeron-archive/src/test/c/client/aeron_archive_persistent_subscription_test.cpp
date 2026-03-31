@@ -376,13 +376,22 @@ protected:
 
     static TestArchive createArchive(const std::string& aeronDir)
     {
+        std::unordered_map<std::string, std::string> properties = TestArchive::defaultProperties();
+        properties["aeron.timer.interval"] = "100ms";
+        properties["aeron.image.liveness.timeout"] = "2s";
+        properties["aeron.untethered.window.limit.timeout"] = "1s";
+        properties["aeron.untethered.linger.timeout"] = "1s";
+        properties["aeron.publication.linger.timeout"] = "1s";
+
         return {
             aeronDir,
             ARCHIVE_DIR,
             std::cout,
             LOCALHOST_CONTROL_REQUEST_CHANNEL,
             "aeron:udp?endpoint=localhost:0",
-            1
+            1,
+            10,
+            properties
         };
     }
 
