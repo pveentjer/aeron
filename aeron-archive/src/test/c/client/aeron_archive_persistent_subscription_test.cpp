@@ -428,7 +428,7 @@ protected:
         return ctx;
     }
 
-    aeron_archive_persistent_subscription_context_t *createDefaultPersistentSubscriptionContext(
+    static aeron_archive_persistent_subscription_context_t *createDefaultPersistentSubscriptionContext(
         aeron_t *aeron,
         aeron_archive_context_t *archiveContext,
         const int64_t recordingId)
