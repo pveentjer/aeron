@@ -895,7 +895,6 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldErrorIfStartPositionIsAfter
     const std::vector<uint8_t> message(1024, 0);
     persistent_publication.persist({{ message }});
 
-    // todo
     const int64_t stop_position = persistent_publication.stop();
     ASSERT_GT(stop_position, 0);
 
