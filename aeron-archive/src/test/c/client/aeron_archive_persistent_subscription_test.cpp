@@ -1336,17 +1336,9 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldDropFromLiveBackToReplayThe
     ASSERT_TRUE(aeron_archive_persistent_subscription_is_live(persistent_subscription));
 
     // Phase 5: introduce a fast subscription on a separate media driver to cause the persistent subscription to fall behind.
-    // Note: Java launches a bare MediaDriver here. In C we have no standalone media driver launcher,
-    // so we launch a second TestArchive purely for its media driver — the archive part is unused. Ugly hack.
     {
-        TestArchive archive2(
-            m_aeronDir + "-2",
-            std::string(ARCHIVE_DIR) + "-2",
-            std::cout,
-            "aeron:udp?endpoint=localhost:8011",
-            "aeron:udp?endpoint=localhost:0",
-            2);
-        AeronResource aeron2(m_aeronDir + "-2");
+        DriverResource driver2;
+        AeronResource aeron2(driver2.aeronDir());
 
         aeron_subscription_t *fast_subscription = nullptr;
         aeron_async_add_subscription_t *async_add = nullptr;
@@ -2090,16 +2082,8 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldHandleReplayBeingAheadOfLiv
     PersistentPublication persistent_publication(m_aeronDir, pub_channel, STREAM_ID);
 
     // Phase 1: create a slow subscription on a separate media driver with a limited receive window.
-    // Note: Java launches a bare MediaDriver here. In C we launch a second TestArchive purely
-    // for its media driver — the archive part is unused. Ugly hack.
-    TestArchive archive2(
-        m_aeronDir + "-2",
-        std::string(ARCHIVE_DIR) + "-2",
-        std::cout,
-        "aeron:udp?endpoint=localhost:8011",
-        "aeron:udp?endpoint=localhost:0",
-        2);
-    AeronResource aeron2(m_aeronDir + "-2");
+    DriverResource driver2;
+    AeronResource aeron2(driver2.aeronDir());
 
     aeron_subscription_t *slow_subscription = nullptr;
     aeron_async_add_subscription_t *async_add = nullptr;
