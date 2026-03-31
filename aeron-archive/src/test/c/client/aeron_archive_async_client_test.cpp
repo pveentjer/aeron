@@ -188,15 +188,25 @@ protected:
         return counter_id;
     }
 
-    static TestArchive createTestArchive(const std::string& aeron_dir)
+    static TestArchive createTestArchive(
+        const std::string& aeron_dir,
+        const std::unordered_map<std::string, std::string>& overrides = {})
     {
+        std::unordered_map<std::string, std::string> properties = TestArchive::defaultProperties();
+        for (const auto& override : overrides)
+        {
+            properties[override.first] = override.second;
+        }
+
         return {
             aeron_dir,
             ARCHIVE_DIR,
             std::cout,
             "aeron:udp?endpoint=localhost:8010",
             "aeron:udp?endpoint=localhost:0",
-            17
+            17,
+            10,
+            properties
         };
     }
 };
@@ -429,6 +439,7 @@ TEST_F(AeronArchiveAsyncClientTest, testAeronArchiveAsyncClient)
 
     {
         TestArchive testArchive = createTestArchive(aeron_dir);
+        testArchive.deleteDirOnTearDown(false);
 
         ASSERT_FALSE(aeron_archive_async_client_is_connected(client));
         pollUntil<int>("is connected", client, [&] { return listener.connectedCount; }, [](const int x) { return x == 1; });
@@ -515,15 +526,23 @@ TEST_F(AeronArchiveAsyncClientTest, testAeronArchiveAsyncClient)
 
     ASSERT_FALSE(aeron_archive_async_client_is_connected(client));
     ASSERT_FALSE(aeron_archive_async_client_try_send_max_recorded_position_request(client, 7, recording_id));
+    ASSERT_FALSE(aeron_archive_async_client_try_send_replay_token_request(client, 8, recording_id));
     ASSERT_EQ(AERON_NULL_VALUE, aeron_archive_async_client_get_control_session_id(client));
 
     {
-        TestArchive testArchive = createTestArchive(aeron_dir);
+        TestArchive testArchive = createTestArchive(aeron_dir, {{"aeron.archive.dir.delete.on.start", "false"}});
 
         pollUntil<int>("is reconnected", client, [&] { return listener.connectedCount; }, [](const int x) { return x == 2; });
         ASSERT_TRUE(aeron_archive_async_client_is_connected(client));
 
         ASSERT_NE(AERON_NULL_VALUE, aeron_archive_async_client_get_control_session_id(client));
+
+        ASSERT_TRUE(aeron_archive_async_client_try_send_max_recorded_position_request(client, 9, recording_id));
+        auto controlResponse9 = pollUntilControlResponseReceived(client, listener, 9);
+        ASSERT_EQ(9, controlResponse9->correlation_id);
+        ASSERT_EQ(stop_position, controlResponse9->relevant_id);
+        ASSERT_EQ(aeron_archive_client_controlResponseCode_OK, controlResponse9->code);
+        ASSERT_EQ("", controlResponse9->error_message);
 
         ASSERT_EQ(0, aeron_archive_async_client_destroy(client));
     }
