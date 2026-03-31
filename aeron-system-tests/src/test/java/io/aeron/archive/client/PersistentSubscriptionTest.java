@@ -67,12 +67,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.File;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -898,8 +900,8 @@ class PersistentSubscriptionTest
 
             // Publish more messages and consume them from a 'faster' consumer, forcing the Persistent Subscription
             // to fall behind and drop off live.
-            final MediaDriver.Context ctx =
-                new MediaDriver.Context().aeronDirectoryName(CommonContext.generateRandomDirName());
+            final MediaDriver.Context ctx = driverCtxTpl.clone()
+                .aeronDirectoryName(CommonContext.generateRandomDirName());
             try (MediaDriver mediaDriver = MediaDriver.launch(ctx);
                 Aeron aeron = Aeron.connect(
                     new Aeron.Context().aeronDirectoryName(mediaDriver.aeronDirectoryName())))
@@ -1391,10 +1393,10 @@ class PersistentSubscriptionTest
     @InterruptAfter(10)
     @ParameterizedTest
     @ValueSource(longs = { FROM_START, FROM_LIVE })
-    void shouldConnectToArchiveWhenItBecomesAvailable(final long startPosition)
+    void shouldConnectToArchiveWhenItBecomesAvailable(final long startPosition, @TempDir Path tempDir )
     {
         this.archive.close();
-        final File archiveDir = new File(SystemUtil.tmpDirName(), "testLocalArchive");
+        final File archiveDir = new File(tempDir.toString(), "testLocalArchive");
         final Archive.Context archiveCtx = this.archiveCtx.clone()
             .archiveDir(archiveDir)
             .deleteArchiveOnStart(false);
@@ -1644,8 +1646,8 @@ class PersistentSubscriptionTest
 
             // Publish more messages and consume them from a 'faster' consumer, forcing the Persistent Subscription
             // to fall behind and drop off live.
-            final MediaDriver.Context ctx =
-                new MediaDriver.Context().aeronDirectoryName(CommonContext.generateRandomDirName());
+            final MediaDriver.Context ctx = driverCtxTpl.clone()
+                .aeronDirectoryName(CommonContext.generateRandomDirName());
             try (MediaDriver mediaDriver = MediaDriver.launch(ctx);
                 Aeron aeron = Aeron.connect(
                     new Aeron.Context().aeronDirectoryName(mediaDriver.aeronDirectoryName())))
@@ -1701,7 +1703,7 @@ class PersistentSubscriptionTest
     {
         PersistentPublication persistentPublication = PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
 
-        final MediaDriver.Context ctx = new MediaDriver.Context()
+        final MediaDriver.Context ctx = driverCtxTpl.clone()
             .aeronDirectoryName(CommonContext.generateRandomDirName());
         MediaDriver mediaDriver = addCloseable(MediaDriver.launch(ctx));
         Aeron aeron = addCloseable(
@@ -1772,7 +1774,7 @@ class PersistentSubscriptionTest
     {
         PersistentPublication persistentPublication = PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
 
-        final MediaDriver.Context ctx = new MediaDriver.Context()
+        final MediaDriver.Context ctx = driverCtxTpl.clone()
             .aeronDirectoryName(CommonContext.generateRandomDirName());
         MediaDriver mediaDriver = addCloseable(MediaDriver.launch(ctx));
         Aeron aeron = addCloseable(
@@ -2072,7 +2074,7 @@ class PersistentSubscriptionTest
 
     @Test
     @InterruptAfter(10)
-    void shouldReconnectToTheArchiveAfterArchiveRestart()
+    void shouldReconnectToTheArchiveAfterArchiveRestart(@TempDir Path tempDir)
     {
         final String aeron2Dir = CommonContext.generateRandomDirName();
 
@@ -2087,7 +2089,7 @@ class PersistentSubscriptionTest
         final Aeron aeron2 = addCloseable(Aeron.connect(aeronCtxTpl.clone().aeronDirectoryName(aeron2Dir)));
 
         final String archiveControlRequestChannel = "aeron:udp?endpoint=localhost:8011";
-        final File remoteArchiveDir = new File(SystemUtil.tmpDirName(), "remoteArchiveDir");
+        final File remoteArchiveDir = new File(tempDir.toString(), "remoteArchiveDir");
 
         final Archive.Context remoteArchiveCtx = archiveCtx.clone()
             .archiveDir(remoteArchiveDir)
