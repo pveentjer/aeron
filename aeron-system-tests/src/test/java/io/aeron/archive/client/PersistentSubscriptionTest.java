@@ -837,7 +837,7 @@ class PersistentSubscriptionTest
 
     @Test
     @InterruptAfter(5)
-    void shouldHandleReplayBeingAheadOfLive()
+    void canJoinLiveWhenLivePositionIsBehindReplayPosition()
     {
         final String pubChannel = "aeron:udp?control=localhost:2000|control-mode=dynamic|fc=min";
         final String subChannel = "aeron:udp?control=localhost:2000|rcv-wnd=4k";
@@ -851,9 +851,11 @@ class PersistentSubscriptionTest
         systemTestWatcher.dataCollector().add(driver2Ctx.aeronDirectory());
         final Aeron aeron2 = addCloseable(Aeron.connect(aeronCtxTpl.clone().aeronDirectoryName(aeronDir2)));
 
-        final Subscription subscription = aeron2.addSubscription(subChannel, STREAM_ID);
-        Tests.awaitConnected(subscription);
+        final Subscription slowConsumer = aeron2.addSubscription(subChannel, STREAM_ID);
+        Tests.awaitConnected(slowConsumer);
 
+        // All 32k will be consumed by the archive and recorded,
+        // but only 4k will be sent to the receivers until the subscribers start consuming
         persistentPublication.persist(generateFixedPayloads(32, ONE_KB_MESSAGE_SIZE));
 
         persistentSubscriptionCtx
@@ -862,21 +864,27 @@ class PersistentSubscriptionTest
 
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
-            executeUntil(() -> fragmentHandler.hasReceivedPayloads(32),
+            // The persistent subscription can consume all 32k from the archive
+            executeUntil(
+                () -> fragmentHandler.hasReceivedPayloads(32),
                 () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+
+            assertTrue(persistentSubscription.isReplaying());
 
             executeUntil(
                 () -> persistentPublication.receiverCount() == 2,
                 () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
             );
 
+            // Consuming on the slower consumer allows the sender to send more than the initial 4k
             executeUntil(persistentSubscription::isLive,
                 () ->
                 {
                     persistentSubscription.controlledPoll(fragmentHandler, 10);
-                    subscription.poll((b, o, l, h) -> {}, 10);
+                    slowConsumer.poll((b, o, l, h) -> {}, 10);
                 });
-
+            // The persistent subscription will add the live chanel when live is at 4k,
+            // which is 28k behind where it got up to on replay
             assertEquals(-28 * 1024L, persistentSubscription.joinError());
         }
     }
