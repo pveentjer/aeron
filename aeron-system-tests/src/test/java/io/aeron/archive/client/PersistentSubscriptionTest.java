@@ -2078,12 +2078,9 @@ class PersistentSubscriptionTest
     {
         final String aeron2Dir = CommonContext.generateRandomDirName();
 
-        final MediaDriver.Context driver2CtxTpl = driverCtxTpl.clone()
-            .aeronDirectoryName(aeron2Dir)
-            .imageLivenessTimeoutNs(TimeUnit.SECONDS.toNanos(2));
-
-        final TestMediaDriver mediaDriver2 = TestMediaDriver.launch(driver2CtxTpl.clone(), systemTestWatcher);
-        addCloseable(mediaDriver2);
+        final MediaDriver.Context driver2CtxTpl = driverCtxTpl.clone().aeronDirectoryName(aeron2Dir);
+        final TestMediaDriver mediaDriver2 =
+            addCloseable(TestMediaDriver.launch(driver2CtxTpl.clone(), systemTestWatcher));
         systemTestWatcher.dataCollector().add(driver2CtxTpl.aeronDirectory());
 
         final Aeron aeron2 = addCloseable(Aeron.connect(aeronCtxTpl.clone().aeronDirectoryName(aeron2Dir)));
@@ -2097,19 +2094,18 @@ class PersistentSubscriptionTest
             .controlChannel(archiveControlRequestChannel)
             .deleteArchiveOnStart(false);
 
-        final Archive archive = Archive.launch(remoteArchiveCtx.clone());
-        addCloseable(archive);
+        final Archive archive = addCloseable(Archive.launch(remoteArchiveCtx.clone()));
         systemTestWatcher.dataCollector().add(remoteArchiveCtx.archiveDir());
 
-        final AeronArchive.Context remoteAeronArchiveContext = TestContexts.localhostAeronArchive()
+        final AeronArchive.Context remoteAeronArchiveCtx = aeronArchiveContext.clone()
             .controlRequestChannel(archiveControlRequestChannel)
             .aeron(aeron2);
 
-        final AeronArchive remoteArchive = AeronArchive.connect(remoteAeronArchiveContext.clone());
-        addCloseable(remoteArchive);
+        final AeronArchive remoteArchive = addCloseable(AeronArchive.connect(remoteAeronArchiveCtx.clone()));
         assert remoteArchive != null;
 
-        final ExclusivePublication exclusivePublication = addCloseable(aeron.addExclusivePublication(MDC_PUBLICATION_CHANNEL, STREAM_ID));
+        final ExclusivePublication exclusivePublication =
+            addCloseable(aeron.addExclusivePublication(MDC_PUBLICATION_CHANNEL, STREAM_ID));
         remoteArchive.startRecording(MDC_SUBSCRIPTION_CHANNEL, STREAM_ID, SourceLocation.REMOTE);
         Tests.awaitConnected(exclusivePublication);
 
@@ -2119,29 +2115,30 @@ class PersistentSubscriptionTest
         persistentSubscriptionCtx
             .liveChannel(MDC_SUBSCRIPTION_CHANNEL)
             .recordingId(persistentPublication.recordingId())
-            .aeronArchiveContext(remoteAeronArchiveContext)
+            .aeronArchiveContext(remoteAeronArchiveCtx)
             .startPosition(FROM_START);
 
-        final List<byte[]> payloads64 = generateFixedPayloads(64, ONE_KB_MESSAGE_SIZE);
-        final List<byte[]> payloads1 = generateFixedPayloads(1, ONE_KB_MESSAGE_SIZE);
+        final List<byte[]> firstMessageBatch = generateFixedPayloads(1, ONE_KB_MESSAGE_SIZE);
+        final List<byte[]> secondMessageBatch = generateFixedPayloads(1, ONE_KB_MESSAGE_SIZE);
+        final List<byte[]> thirdMessagesBatch = generateFixedPayloads(64, ONE_KB_MESSAGE_SIZE);
 
-        persistentPublication.persist(payloads1);
+        persistentPublication.persist(firstMessageBatch);
 
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
             executeUntil(persistentSubscription::isLive,
                 () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
 
-            assertEquals(1, fragmentHandler.receivedPayloads.size());
+            assertEquals(persistentPublication.publishedMessageCount, fragmentHandler.receivedPayloads.size());
 
-            persistentPublication.persist(payloads64);
-            persistentPublication.persist(payloads1);
+            persistentPublication.persist(secondMessageBatch);
+            persistentPublication.persist(thirdMessagesBatch);
 
             archive.close();
             aeron2.close();
             mediaDriver2.close();
-            addCloseable(TestMediaDriver.launch(driver2CtxTpl.clone(), systemTestWatcher));
 
+            addCloseable(TestMediaDriver.launch(driver2CtxTpl.clone(), systemTestWatcher));
             addCloseable(Aeron.connect(aeronCtxTpl.clone().aeronDirectoryName(aeron2Dir)));
             addCloseable(Archive.launch(remoteArchiveCtx.clone()));
 
@@ -2153,7 +2150,41 @@ class PersistentSubscriptionTest
                 persistentSubscription::isLive,
                 () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
             );
-            assertPayloads(fragmentHandler.receivedPayloads, payloads1, payloads64, payloads1);
+            assertPayloads(fragmentHandler.receivedPayloads, firstMessageBatch, secondMessageBatch, thirdMessagesBatch);
+        }
+    }
+
+    @Test
+    @InterruptAfter(5)
+    void shouldContinueConsumingFromLiveWhileArchiveIsUnavailable()
+    {
+        final PersistentPublication persistentPublication =
+            PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
+
+        final List<byte[]> firstMessageBatch = generateRandomPayloads(5);
+        final List<byte[]> secondMessageBatch = generateRandomPayloads(5);
+        persistentPublication.persist(firstMessageBatch);
+
+        persistentSubscriptionCtx
+            .recordingId(persistentPublication.recordingId())
+            .liveChannel(MDC_SUBSCRIPTION_CHANNEL);
+
+        try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
+        {
+            executeUntil(
+                () -> fragmentHandler.hasReceivedPayloads(persistentPublication.publishedMessageCount())
+                    && persistentSubscription.isLive(),
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+
+            archive.close();
+
+            persistentPublication.publish(secondMessageBatch);
+
+            executeUntil(
+                () -> fragmentHandler.hasReceivedPayloads(persistentPublication.publishedMessageCount()),
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+
+            assertPayloads(fragmentHandler.receivedPayloads, firstMessageBatch, secondMessageBatch);
         }
     }
 
