@@ -363,6 +363,35 @@ class PersistentSubscriptionTest
 
     @Test
     @InterruptAfter(10)
+    void canStartFromLiveWhenRecordingHasStopped()
+    {
+        final PersistentPublication persistentPublication =
+            PersistentPublication.create(aeronArchive, IPC_CHANNEL, STREAM_ID);
+
+        final List<byte[]> firstMessageBatch = generateRandomPayloads(1);
+        final List<byte[]> secondMessageBatch = generateRandomPayloads(1);
+        persistentPublication.persist(firstMessageBatch);
+
+        final long stopPosition = persistentPublication.stop();
+        assertTrue(stopPosition > 0);
+
+        persistentSubscriptionCtx
+            .recordingId(persistentPublication.recordingId())
+            .startPosition(FROM_LIVE);
+
+        try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
+        {
+            executeUntil(persistentSubscription::isLive, () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+            persistentPublication.publish(secondMessageBatch);
+            executeUntil(
+                () ->  fragmentHandler.hasReceivedPayloads(secondMessageBatch.size()),
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+            assertPayloads(fragmentHandler.receivedPayloads, secondMessageBatch);
+         }
+    }
+
+    @Test
+    @InterruptAfter(10)
     void replayStartPositionMustNotBeAfterRecordingLivePosition()
     {
         final PersistentPublication persistentPublication =
