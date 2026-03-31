@@ -781,6 +781,8 @@ class PersistentSubscriptionTest
     @InterruptAfter(5)
     void canJoinLiveWhenLivePositionIsAheadOfReplayPosition()
     {
+        TestMediaDriver.notSupportedOnCMediaDriver("loss generator");
+
         final PersistentPublication persistentPublication = PersistentPublication.create(
             aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID
         );
