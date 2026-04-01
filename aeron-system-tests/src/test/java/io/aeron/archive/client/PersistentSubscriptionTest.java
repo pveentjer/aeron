@@ -1420,12 +1420,12 @@ class PersistentSubscriptionTest
 
         aeronArchive.stopRecording(persistentPublication.publication);
 
-        final List<byte[]> messagesAfterRecording = generateFixedPayloads(1, ONE_KB_MESSAGE_SIZE);
-        persistentPublication.publish(messagesAfterRecording);
-
         // Add another consumer to allow the live position to advance
         try (final Subscription subscriber2 = aeron.addSubscription(MDC_SUBSCRIPTION_CHANNEL, STREAM_ID))
         {
+            final List<byte[]> messagesAfterRecording = generateFixedPayloads(1, ONE_KB_MESSAGE_SIZE);
+            persistentPublication.publish(messagesAfterRecording);
+
             final BufferingFragmentHandler subscriber2FragmentHandler = new BufferingFragmentHandler();
             executeUntil(
                 () -> subscriber2FragmentHandler.hasReceivedPayloads(messagesAfterRecording.size()),
