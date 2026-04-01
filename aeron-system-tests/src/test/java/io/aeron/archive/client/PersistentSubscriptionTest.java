@@ -84,6 +84,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import static io.aeron.AeronCounters.DRIVER_PUBLISHER_POS_TYPE_ID;
@@ -276,18 +277,23 @@ class PersistentSubscriptionTest
 
                 Tests.awaitConnected(fastConsumer);
 
-                final List<byte[]> thirdMessageBatch = generateFixedPayloads(64, ONE_KB_MESSAGE_SIZE);
-                persistentPublication.persist(thirdMessageBatch);
-
-                executeUntil(
-                    () -> fastSubscriptionFragmentHandler.hasReceivedPayloads(thirdMessageBatch.size()),
-                    () -> fastConsumer.poll(fastSubscriptionFragmentHandler, 1)
-                );
+                final List<byte[]> thirdMessageBatch = new ArrayList<>();
+                for (int i = 0; i < 3; i++)
+                {
+                    final List<byte[]> batch = generateFixedPayloads(32, ONE_KB_MESSAGE_SIZE);
+                    persistentPublication.publish(batch);
+                    thirdMessageBatch.addAll(batch);
+                    executeUntil(
+                        () -> fastSubscriptionFragmentHandler.hasReceivedPayloads(thirdMessageBatch.size()),
+                        () -> fastConsumer.poll(fastSubscriptionFragmentHandler, 10)
+                    );
+                }
 
                 // Verify the Persistent Subscription drops back to replay
                 executeUntil(
                     persistentSubscription::isReplaying,
-                    () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+                    () -> persistentSubscription.controlledPoll(fragmentHandler, 10),
+                    description(persistentSubscription, fragmentHandler, listener)
                 );
                 assertTrue(persistentSubscription.isReplaying());
 
@@ -1510,11 +1516,10 @@ class PersistentSubscriptionTest
         }
     }
 
-    @InterruptAfter(10)
     @Test
+    @InterruptAfter(10)
     void canFallbackToReplayAfterStartingFromLive()
     {
-
         final PersistentPublication persistentPublication =
             PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
 
@@ -1558,13 +1563,17 @@ class PersistentSubscriptionTest
 
                 Tests.awaitConnected(fastConsumer);
 
-                final List<byte[]> thirdMessageBatch = generateFixedPayloads(64, ONE_KB_MESSAGE_SIZE);
-                persistentPublication.persist(thirdMessageBatch);
-
-                executeUntil(
-                    () -> fastSubscriptionFragmentHandler.hasReceivedPayloads(thirdMessageBatch.size()),
-                    () -> fastConsumer.poll(fastSubscriptionFragmentHandler, 10)
-                );
+                final List<byte[]> thirdMessageBatch = new ArrayList<>();
+                for (int i = 0; i < 3; i++)
+                {
+                    final List<byte[]> batch = generateFixedPayloads(32, ONE_KB_MESSAGE_SIZE);
+                    persistentPublication.publish(batch);
+                    thirdMessageBatch.addAll(batch);
+                    executeUntil(
+                        () -> fastSubscriptionFragmentHandler.hasReceivedPayloads(thirdMessageBatch.size()),
+                        () -> fastConsumer.poll(fastSubscriptionFragmentHandler, 10)
+                    );
+                }
 
                 // Verify the Persistent Subscription drops back to replay
                 executeUntil(
@@ -1681,8 +1690,8 @@ class PersistentSubscriptionTest
         Aeron aeron = addCloseable(
             Aeron.connect(new Aeron.Context().aeronDirectoryName(mediaDriver.aeronDirectoryName())));
 
-        final Subscription fastSubscription = addCloseable(aeron.addSubscription(MDC_SUBSCRIPTION_CHANNEL, STREAM_ID));
-        final CountingFragmentHandler countingFragmentHandler = new CountingFragmentHandler();
+        final Subscription fastConsumer = addCloseable(aeron.addSubscription(MDC_SUBSCRIPTION_CHANNEL, STREAM_ID));
+        final CountingFragmentHandler fastSubscriptionFragmentHandler = new CountingFragmentHandler();
 
         persistentSubscriptionCtx
             .recordingId(persistentPublication.recordingId)
@@ -1697,32 +1706,31 @@ class PersistentSubscriptionTest
             final List<byte[]> firstMessageBatch = generateFixedPayloads(5, ONE_KB_MESSAGE_SIZE);
             persistentPublication.persist(firstMessageBatch);
             executeUntil(
-                () -> countingFragmentHandler.hasReceivedPayloads(persistentPublication.publishedMessageCount()),
-                () -> fastSubscription.poll(countingFragmentHandler, 10));
+                () -> fastSubscriptionFragmentHandler.hasReceivedPayloads(persistentPublication.publishedMessageCount()),
+                () -> fastConsumer.poll(fastSubscriptionFragmentHandler, 10));
 
             // Remove the recording
             aeronArchive.stopRecording(persistentPublication.publication);
             aeronArchive.purgeRecording(persistentPublication.recordingId);
 
             // Allow a faster consumer to advance ahead, causing the persistent subscription to drop from live.
-            final List<byte[]> secondMessageBatch = generateFixedPayloads(32, ONE_KB_MESSAGE_SIZE);
-            persistentPublication.publish(secondMessageBatch);
-            executeUntil(
-                () -> countingFragmentHandler.hasReceivedPayloads(persistentPublication.publishedMessageCount()),
-                () -> fastSubscription.poll(countingFragmentHandler, 10)
-            );
-
-            final List<byte[]> thirdMessageBatch = generateFixedPayloads(33, ONE_KB_MESSAGE_SIZE);
-            persistentPublication.publish(thirdMessageBatch);
-            executeUntil(
-                () -> countingFragmentHandler.hasReceivedPayloads(persistentPublication.publishedMessageCount()),
-                () -> fastSubscription.poll(countingFragmentHandler, 10)
-            );
+            final List<byte[]> secondMessageBatch = new ArrayList<>();
+            for (int i = 0; i < 3; i++)
+            {
+                final List<byte[]> batch = generateFixedPayloads(32, ONE_KB_MESSAGE_SIZE);
+                persistentPublication.publish(batch);
+                secondMessageBatch.addAll(batch);
+                executeUntil(
+                    () -> fastSubscriptionFragmentHandler.hasReceivedPayloads(secondMessageBatch.size()),
+                    () -> fastConsumer.poll(fastSubscriptionFragmentHandler, 10)
+                );
+            }
 
             // Verify we cannot fall back to replay, as the recording no longer exists
             executeUntil(
                 persistentSubscription::hasFailed,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+                () -> persistentSubscription.controlledPoll(fragmentHandler, 10),
+                description(persistentSubscription, fragmentHandler, listener)
             );
             assertEquals(ArchiveException.class, listener.lastException.getClass());
             assertThat(
@@ -2492,6 +2500,45 @@ class PersistentSubscriptionTest
             runnable.run();
             return predicate.getAsBoolean();
         });
+    }
+
+    private static void executeUntil(
+        final BooleanSupplier predicate,
+        final Runnable runnable,
+        final Supplier<String> errorMessageSupplier)
+    {
+        while (true)
+        {
+            runnable.run();
+
+            if (predicate.getAsBoolean())
+            {
+                break;
+            }
+
+            if (Thread.interrupted())
+            {
+                throw new TimeoutException(errorMessageSupplier.get());
+            }
+
+            Thread.yield();
+        }
+    }
+
+    private static Supplier<String> description(
+        final PersistentSubscription persistentSubscription,
+        final BufferingFragmentHandler fragmentHandler,
+        final PersistentSubscriptionListenerImpl listener)
+    {
+        return () -> "PersistentSubscription: isLive=" + persistentSubscription.isLive() +
+                     " isReplaying=" + persistentSubscription.isReplaying() +
+                     " hasFailed=" + persistentSubscription.hasFailed() +
+                     " FragmentHandler: count=" + fragmentHandler.receivedPayloads.size() +
+                     " position=" + fragmentHandler.position +
+                     " Listener: liveJoinedCount=" + listener.liveJoinedCount +
+                     " liveLeftCount=" + listener.liveLeftCount +
+                     " errorCount=" + listener.errorCount +
+                     " lastError=" + (listener.lastException != null ? listener.lastException.getMessage() : "null");
     }
 
     private void assertPayloads(final List<byte[]> receivedPayloads, final List<byte[]> payloads)
