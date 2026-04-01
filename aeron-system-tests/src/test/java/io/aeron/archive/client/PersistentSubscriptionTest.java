@@ -723,7 +723,7 @@ class PersistentSubscriptionTest
     void shouldJoinLiveWhenItBecomesAvailable()
     {
         // Ensure a recording exists for the stream.
-        PersistentPublication persistentPublication = PersistentPublication.create(
+        final PersistentPublication persistentPublication = PersistentPublication.create(
             aeronArchive, IPC_CHANNEL, STREAM_ID
         );
         persistentPublication.persist(generateRandomPayloads(1));
@@ -737,7 +737,7 @@ class PersistentSubscriptionTest
             .recordingId(recordingId)
             .aeronArchiveContext().messageTimeoutNs(TimeUnit.MILLISECONDS.toNanos(500));
 
-        try (final PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
+        try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
             // Start trying to join live while the live publication is stopped.
             executeUntil(
@@ -836,7 +836,7 @@ class PersistentSubscriptionTest
     @InterruptAfter(10)
     @ParameterizedTest
     @ValueSource(longs = { FROM_START, FROM_LIVE })
-    void shouldConnectToArchiveWhenItBecomesAvailable(final long startPosition, @TempDir Path tempDir )
+    void shouldConnectToArchiveWhenItBecomesAvailable(final long startPosition, final @TempDir Path tempDir)
     {
         archive.close();
         final File archiveDir = new File(tempDir.toString(), "testLocalArchive");
@@ -859,7 +859,7 @@ class PersistentSubscriptionTest
             .recordingId(persistentPublication.recordingId())
             .startPosition(startPosition)
             .liveChannel(MDC_SUBSCRIPTION_CHANNEL)
-            .aeronArchiveContext().messageTimeoutNs(TimeUnit.MILLISECONDS.toNanos(500));;
+            .aeronArchiveContext().messageTimeoutNs(TimeUnit.MILLISECONDS.toNanos(500));
 
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
@@ -893,7 +893,7 @@ class PersistentSubscriptionTest
             executeUntil(persistentSubscription::isLive, () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
             persistentPublication.publish(secondMessageBatch);
             executeUntil(
-                () ->  fragmentHandler.hasReceivedPayloads(secondMessageBatch.size()),
+                () -> fragmentHandler.hasReceivedPayloads(secondMessageBatch.size()),
                 () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
             assertPayloads(fragmentHandler.receivedPayloads, secondMessageBatch);
         }
@@ -950,7 +950,8 @@ class PersistentSubscriptionTest
 
             executeUntil(
                 () -> fragmentHandler.hasReceivedPayloads(persistentPublication.publishedMessageCount),
-                () -> {
+                () ->
+                {
                     persistentSubscription.controlledPoll(fragmentHandler, fragmentLimit);
                     assertTrue(persistentSubscription.isReplaying());
                 });
@@ -1027,7 +1028,8 @@ class PersistentSubscriptionTest
             );
             executeUntil(
                 () -> fragmentHandler.hasReceivedPayloads(persistentPublication.publishedMessageCount()),
-                () -> {
+                () ->
+                {
                     persistentSubscription.controlledPoll(fragmentHandler, 1);
                     assertTrue(persistentSubscription.isReplaying());
                 }
@@ -1276,7 +1278,7 @@ class PersistentSubscriptionTest
         final PersistentPublication persistentPublication =
             PersistentPublication.create(aeronArchive, exclusivePublication);
 
-        AtomicBoolean keepDroppingAfterMatch = new AtomicBoolean(false);
+        final AtomicBoolean keepDroppingAfterMatch = new AtomicBoolean(false);
 
         frameDataLossGenerator.enable(
             (bytes) ->
@@ -1427,7 +1429,7 @@ class PersistentSubscriptionTest
         aeronArchive.stopRecording(persistentPublication.publication);
 
         // Add another consumer to allow the live position to advance
-        try (final Subscription subscriber2 = aeron.addSubscription(MDC_SUBSCRIPTION_CHANNEL, STREAM_ID))
+        try (Subscription subscriber2 = aeron.addSubscription(MDC_SUBSCRIPTION_CHANNEL, STREAM_ID))
         {
             final List<byte[]> messagesAfterRecording = generateFixedPayloads(1, ONE_KB_MESSAGE_SIZE);
             persistentPublication.publish(messagesAfterRecording);
@@ -1611,12 +1613,13 @@ class PersistentSubscriptionTest
     @InterruptAfter(10)
     void cannotFallbackToReplayWhenTheRecordingHasStoppedAtAnEarlierPosition()
     {
-        PersistentPublication persistentPublication = PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
+        final PersistentPublication persistentPublication =
+            PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
 
         final MediaDriver.Context ctx = driverCtxTpl.clone()
             .aeronDirectoryName(CommonContext.generateRandomDirName());
-        MediaDriver mediaDriver = addCloseable(MediaDriver.launch(ctx));
-        Aeron aeron = addCloseable(
+        final MediaDriver mediaDriver = addCloseable(MediaDriver.launch(ctx));
+        final Aeron aeron = addCloseable(
             Aeron.connect(new Aeron.Context().aeronDirectoryName(mediaDriver.aeronDirectoryName())));
 
         final Subscription fastSubscription = addCloseable(aeron.addSubscription(MDC_SUBSCRIPTION_CHANNEL, STREAM_ID));
@@ -1682,12 +1685,13 @@ class PersistentSubscriptionTest
     @InterruptAfter(10)
     void cannotFallbackToReplayWhenTheRecordingHasBeenRemoved()
     {
-        PersistentPublication persistentPublication = PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
+        final PersistentPublication persistentPublication =
+            PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
 
         final MediaDriver.Context ctx = driverCtxTpl.clone()
             .aeronDirectoryName(CommonContext.generateRandomDirName());
-        MediaDriver mediaDriver = addCloseable(MediaDriver.launch(ctx));
-        Aeron aeron = addCloseable(
+        final MediaDriver mediaDriver = addCloseable(MediaDriver.launch(ctx));
+        final Aeron aeron = addCloseable(
             Aeron.connect(new Aeron.Context().aeronDirectoryName(mediaDriver.aeronDirectoryName())));
 
         final Subscription fastConsumer = addCloseable(aeron.addSubscription(MDC_SUBSCRIPTION_CHANNEL, STREAM_ID));
@@ -1742,7 +1746,7 @@ class PersistentSubscriptionTest
 
     @Test
     @InterruptAfter(10)
-    void shouldReconnectToTheArchiveAfterArchiveRestart(@TempDir Path tempDir)
+    void shouldReconnectToTheArchiveAfterArchiveRestart(final @TempDir Path tempDir)
     {
         final String aeron2Dir = CommonContext.generateRandomDirName();
 
@@ -1840,8 +1844,8 @@ class PersistentSubscriptionTest
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
             executeUntil(
-                () -> fragmentHandler.hasReceivedPayloads(persistentPublication.publishedMessageCount())
-                    && persistentSubscription.isLive(),
+                () -> fragmentHandler.hasReceivedPayloads(persistentPublication.publishedMessageCount()) &&
+                      persistentSubscription.isLive(),
                 () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
 
             archive.close();
@@ -2262,7 +2266,7 @@ class PersistentSubscriptionTest
         final PersistentPublication persistentPublication = PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
         persistentPublication.persist(generateRandomPayloads(2));
 
-        PersistentSubscription.Context persistentSubscriptionCtx = new PersistentSubscription.Context()
+        final PersistentSubscription.Context persistentSubscriptionCtx = new PersistentSubscription.Context()
             .aeronDirectoryName(aeronDirectoryName)
             .recordingId(persistentPublication.recordingId)
             .startPosition(FROM_START)
@@ -2797,7 +2801,7 @@ class PersistentSubscriptionTest
             {
                 return;
             }
-            long position = publish(messages);
+            final long position = publish(messages);
             Tests.awaitPosition(countersReader, recordingCounterId, position);
         }
 
