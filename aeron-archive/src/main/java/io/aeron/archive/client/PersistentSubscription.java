@@ -127,27 +127,35 @@ public final class PersistentSubscription implements AutoCloseable
     {
         int workCount = asyncAeronArchive.poll();
 
-        workCount += switch (state)
+        try
         {
-            case AWAIT_ARCHIVE_CONNECTION -> awaitArchiveConnection();
-            case SEND_LIST_RECORDING_REQUEST -> sendListRecordingRequest();
-            case AWAIT_LIST_RECORDING_RESPONSE -> awaitListRecordingResponse();
-            case SEND_REPLAY_REQUEST -> sendReplayRequest();
-            case AWAIT_REPLAY_RESPONSE -> awaitReplayResponse();
-            case ADD_REPLAY_SUBSCRIPTION -> addReplaySubscription();
-            case AWAIT_REPLAY_SUBSCRIPTION -> awaitReplaySubscription();
-            case AWAIT_REPLAY_CHANNEL_ENDPOINT -> awaitReplayChannelEndpoint();
-            case ADD_REQUEST_PUBLICATION -> addRequestPublication();
-            case AWAIT_REQUEST_PUBLICATION -> awaitRequestPublication();
-            case SEND_REPLAY_TOKEN_REQUEST -> sendReplayTokenRequest();
-            case AWAIT_REPLAY_TOKEN -> awaitReplayToken();
-            case REPLAY -> replay(fragmentHandler, fragmentLimit);
-            case ATTEMPT_SWITCH -> attemptSwitch(fragmentHandler, fragmentLimit);
-            case ADD_LIVE_SUBSCRIPTION -> addLiveSubscription();
-            case AWAIT_LIVE -> awaitLive();
-            case LIVE -> live(fragmentHandler, fragmentLimit);
-            case FAILED -> 0;
-        };
+            controlledFragmentHandler = fragmentHandler;
+            workCount += switch (state)
+            {
+                case AWAIT_ARCHIVE_CONNECTION -> awaitArchiveConnection();
+                case SEND_LIST_RECORDING_REQUEST -> sendListRecordingRequest();
+                case AWAIT_LIST_RECORDING_RESPONSE -> awaitListRecordingResponse();
+                case SEND_REPLAY_REQUEST -> sendReplayRequest();
+                case AWAIT_REPLAY_RESPONSE -> awaitReplayResponse();
+                case ADD_REPLAY_SUBSCRIPTION -> addReplaySubscription();
+                case AWAIT_REPLAY_SUBSCRIPTION -> awaitReplaySubscription();
+                case AWAIT_REPLAY_CHANNEL_ENDPOINT -> awaitReplayChannelEndpoint();
+                case ADD_REQUEST_PUBLICATION -> addRequestPublication();
+                case AWAIT_REQUEST_PUBLICATION -> awaitRequestPublication();
+                case SEND_REPLAY_TOKEN_REQUEST -> sendReplayTokenRequest();
+                case AWAIT_REPLAY_TOKEN -> awaitReplayToken();
+                case REPLAY -> replay(fragmentLimit);
+                case ATTEMPT_SWITCH -> attemptSwitch(fragmentLimit);
+                case ADD_LIVE_SUBSCRIPTION -> addLiveSubscription();
+                case AWAIT_LIVE -> awaitLive();
+                case LIVE -> live(fragmentLimit);
+                case FAILED -> 0;
+            };
+        }
+        finally
+        {
+            controlledFragmentHandler = null;
+        }
 
         return workCount;
     }
@@ -796,7 +804,7 @@ public final class PersistentSubscription implements AutoCloseable
         return 1;
     }
 
-    private int replay(final ControlledFragmentHandler fragmentHandler, final int fragmentLimit)
+    private int replay(final int fragmentLimit)
     {
         Image replayImage = this.replayImage;
 
@@ -880,7 +888,7 @@ public final class PersistentSubscription implements AutoCloseable
             }
         }
 
-        final int fragments = controlledPoll(replayImage, fragmentHandler, fragmentLimit);
+        final int fragments = controlledPoll(replayImage, fragmentLimit);
 
         position = replayImage.position();
 
@@ -916,7 +924,7 @@ public final class PersistentSubscription implements AutoCloseable
                                         "subscriber or a firewall between them."));
     }
 
-    private int attemptSwitch(final ControlledFragmentHandler fragmentHandler, final int fragmentLimit)
+    private int attemptSwitch(final int fragmentLimit)
     {
         int fragments = 0;
 
@@ -965,15 +973,7 @@ public final class PersistentSubscription implements AutoCloseable
             fragments += liveImage.controlledPoll(liveCatchupFragmentHandler, fragmentLimit);
 
             // Carry on with the replay for now.
-            controlledFragmentHandler = fragmentHandler;
-            try
-            {
-                fragments += replayImage.controlledPoll(replayCatchupFragmentHandler, fragmentLimit);
-            }
-            finally
-            {
-                controlledFragmentHandler = null;
-            }
+            fragments += replayImage.controlledPoll(replayCatchupFragmentHandler, fragmentLimit);
         }
 
         if (isLive())
@@ -1101,10 +1101,10 @@ public final class PersistentSubscription implements AutoCloseable
         return 0;
     }
 
-    private int live(final ControlledFragmentHandler fragmentHandler, final int fragmentLimit)
+    private int live(final int fragmentLimit)
     {
         final Image image = liveImage;
-        final int fragments = controlledPoll(image, fragmentHandler, fragmentLimit);
+        final int fragments = controlledPoll(image, fragmentLimit);
         if (fragments == 0 && image.isClosed())
         {
             position = image.position();
@@ -1150,18 +1150,10 @@ public final class PersistentSubscription implements AutoCloseable
 
     private int controlledPoll(
         final Image image,
-        final ControlledFragmentHandler fragmentHandler,
         final int fragmentLimit)
     {
-        controlledFragmentHandler = fragmentHandler;
-        try
-        {
-            return image.controlledPoll(assembler, fragmentLimit);
-        }
-        finally
-        {
-            controlledFragmentHandler = null;
-        }
+
+        return image.controlledPoll(assembler, fragmentLimit);
     }
 
     private ControlledFragmentHandler.Action onFragment(
