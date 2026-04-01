@@ -393,13 +393,18 @@ static aeron_controlled_fragment_handler_action_t poll_handler(
         case AERON_ARCHIVE_CLIENT_CONTROL_RESPONSE_SBE_TEMPLATE_ID:
         {
             struct aeron_archive_client_controlResponse control_response;
-            aeron_archive_client_controlResponse_wrap_for_decode(
+            if (NULL == aeron_archive_client_controlResponse_wrap_for_decode(
                 &control_response,
                 (char *)buffer,
                 aeron_archive_client_messageHeader_encoded_length(),
                 block_length,
                 version,
-                length);
+                length))
+            {
+                AERON_SET_ERR(errno, "%s", "unable to wrap buffer");
+                client->error_on_fragment = true;
+                return AERON_ACTION_BREAK;
+            }
 
             int64_t control_session_id = aeron_archive_client_controlResponse_controlSessionId(&control_response);
             if (control_session_id == client->archive->control_session_id)
@@ -449,13 +454,18 @@ static aeron_controlled_fragment_handler_action_t poll_handler(
         case AERON_ARCHIVE_CLIENT_RECORDING_DESCRIPTOR_SBE_TEMPLATE_ID:
         {
             struct aeron_archive_client_recordingDescriptor recording_descriptor;
-            aeron_archive_client_recordingDescriptor_wrap_for_decode(
+            if (NULL == aeron_archive_client_recordingDescriptor_wrap_for_decode(
                 &recording_descriptor,
                 (char *)buffer,
                 aeron_archive_client_messageHeader_encoded_length(),
                 block_length,
                 version,
-                length);
+                length))
+            {
+                AERON_SET_ERR(errno, "%s", "unable to wrap buffer");
+                client->error_on_fragment = true;
+                return AERON_ACTION_BREAK;
+            }
 
             int64_t control_session_id = aeron_archive_client_recordingDescriptor_controlSessionId(&recording_descriptor);
             if (control_session_id == client->archive->control_session_id)
