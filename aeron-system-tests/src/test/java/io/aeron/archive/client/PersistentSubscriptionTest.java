@@ -1666,19 +1666,17 @@ class PersistentSubscriptionTest
             );
 
             // Allow a faster consumer to advance ahead, causing the persistent subscription to drop from live.
-            final List<byte[]> thirdMessageBatch = generateFixedPayloads(32, ONE_KB_MESSAGE_SIZE);
-            persistentPublication.publish(thirdMessageBatch);
-            executeUntil(
-                () -> countingFragmentHandler.hasReceivedPayloads(persistentPublication.publishedMessageCount()),
-                () -> fastSubscription.poll(countingFragmentHandler, 10)
-            );
-
-            final List<byte[]> fourthMessageBatch = generateFixedPayloads(33, ONE_KB_MESSAGE_SIZE);
-            persistentPublication.publish(fourthMessageBatch);
-            executeUntil(
-                () -> countingFragmentHandler.hasReceivedPayloads(persistentPublication.publishedMessageCount()),
-                () -> fastSubscription.poll(countingFragmentHandler, 10)
-            );
+            final List<byte[]> thirdMessageBatch = new ArrayList<>();
+            for (int i = 0; i < 3; i++)
+            {
+                final List<byte[]> batch = generateFixedPayloads(32, ONE_KB_MESSAGE_SIZE);
+                persistentPublication.publish(batch);
+                thirdMessageBatch.addAll(batch);
+                executeUntil(
+                    () -> countingFragmentHandler.hasReceivedPayloads(thirdMessageBatch.size()),
+                    () -> fastSubscription.poll(countingFragmentHandler, 10)
+                );
+            }
 
             // Verify we cannot fall back to replay, as we have already advanced beyond the stop position of
             // the recording.
