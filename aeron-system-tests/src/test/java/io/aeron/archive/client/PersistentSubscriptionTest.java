@@ -238,14 +238,14 @@ class PersistentSubscriptionTest
 
             // Start consuming messages over replay
             executeUntil(() -> fragmentHandler.hasReceivedPayloads(1),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+                () -> poll(persistentSubscription, fragmentHandler, 1));
 
             assertEquals(1, archive.context().replaySessionCounter().get());
             assertTrue(persistentSubscription.isReplaying());
 
             // Continue consuming until we switch to live
             executeUntil(persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+                () -> poll(persistentSubscription, fragmentHandler, 10));
 
             assertEquals(1, listener.liveJoinedCount);
             assertEquals(0, listener.liveLeftCount);
@@ -259,7 +259,7 @@ class PersistentSubscriptionTest
 
             executeUntil(
                 () -> fragmentHandler.hasReceivedPayloads(firstMessageBatch.size() + secondMessageBatch.size()),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+                () -> poll(persistentSubscription, fragmentHandler, 10)
             );
 
             assertTrue(persistentSubscription.isLive());
@@ -292,7 +292,7 @@ class PersistentSubscriptionTest
                 // Verify the Persistent Subscription drops back to replay
                 executeUntil(
                     persistentSubscription::isReplaying,
-                    () -> persistentSubscription.controlledPoll(fragmentHandler, 10),
+                    () -> poll(persistentSubscription, fragmentHandler, 10),
                     description(persistentSubscription, fragmentHandler, listener)
                 );
                 assertTrue(persistentSubscription.isReplaying());
@@ -308,7 +308,7 @@ class PersistentSubscriptionTest
 
                 executeUntil(
                     () -> fragmentHandler.hasReceivedPayloads(expectedMessageCount) && persistentSubscription.isLive(),
-                    () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+                    () -> poll(persistentSubscription, fragmentHandler, 10));
 
                 assertEquals(2, listener.liveJoinedCount);
 
@@ -350,7 +350,7 @@ class PersistentSubscriptionTest
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
             executeUntil(() -> fragmentHandler.hasReceivedPayloads(1),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+                () -> poll(persistentSubscription, fragmentHandler, 1));
 
             assertTrue(persistentSubscription.isReplaying());
 
@@ -371,7 +371,7 @@ class PersistentSubscriptionTest
             assertEquals(fragmentHandler.position, replaySubPos.get());
 
             executeUntil(persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+                () -> poll(persistentSubscription, fragmentHandler, 10));
 
             assertPayloads(fragmentHandler.receivedPayloads, payloads);
         }
@@ -395,7 +395,7 @@ class PersistentSubscriptionTest
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
             executeUntil(persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, fragmentLimit)
+                () -> poll(persistentSubscription, fragmentHandler, fragmentLimit)
             );
             assertEquals(1, listener.liveJoinedCount);
 
@@ -403,14 +403,14 @@ class PersistentSubscriptionTest
             persistentPublication.persist(payloads);
 
             executeUntil(() -> fragmentHandler.hasReceivedPayloads(1),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+                () -> poll(persistentSubscription, fragmentHandler, 1));
 
             assertTrue(persistentSubscription.isLive());
             assertFalse(persistentSubscription.isReplaying());
             Tests.await(() -> archive.context().replaySessionCounter().get() == 0);
 
             executeUntil(() -> fragmentHandler.hasReceivedPayloads(payloads.size()), () ->
-                persistentSubscription.controlledPoll(fragmentHandler, fragmentLimit));
+                poll(persistentSubscription, fragmentHandler, fragmentLimit));
 
             assertPayloads(fragmentHandler.receivedPayloads, payloads);
         }
@@ -437,12 +437,12 @@ class PersistentSubscriptionTest
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
             executeUntil(persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+                () -> poll(persistentSubscription, fragmentHandler, 1));
 
             persistentPublication.persist(List.of(payload1));
 
             executeUntil(() -> fragmentHandler.hasReceivedPayloads(2),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+                () -> poll(persistentSubscription, fragmentHandler, 1));
 
             assertPayloads(fragmentHandler.receivedPayloads, List.of(payload0, payload1));
         }
@@ -471,13 +471,13 @@ class PersistentSubscriptionTest
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
             executeUntil(persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+                () -> poll(persistentSubscription, fragmentHandler, 10));
 
             final List<byte[]> newMessages = generateFixedPayloads(1, ONE_KB_MESSAGE_SIZE);
             persistentPublication.persist(newMessages);
 
             executeUntil(() -> fragmentHandler.hasReceivedPayloads(oldMessages.size() + newMessages.size()),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+                () -> poll(persistentSubscription, fragmentHandler, 10));
 
             assertPayloads(fragmentHandler.receivedPayloads, oldMessages, newMessages);
 
@@ -509,10 +509,10 @@ class PersistentSubscriptionTest
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
             executeUntil(persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+                () -> poll(persistentSubscription, fragmentHandler, 10));
 
             executeUntil(() -> fragmentHandler.hasReceivedPayloads(secondMessageBatch.size()),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+                () -> poll(persistentSubscription, fragmentHandler, 10));
 
             assertPayloads(fragmentHandler.receivedPayloads, secondMessageBatch);
         }
@@ -538,7 +538,7 @@ class PersistentSubscriptionTest
 
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
-            executeUntil(persistentSubscription::hasFailed, () -> persistentSubscription.controlledPoll(null, 1));
+            executeUntil(persistentSubscription::hasFailed, () -> poll(persistentSubscription, null, 1));
 
             assertEquals(1, listener.errorCount);
             assertEquals(
@@ -567,7 +567,7 @@ class PersistentSubscriptionTest
 
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
-            executeUntil(persistentSubscription::hasFailed, () -> persistentSubscription.controlledPoll(null, 1));
+            executeUntil(persistentSubscription::hasFailed, () -> poll(persistentSubscription, null, 1));
 
             assertEquals(1, listener.errorCount);
             assertEquals(
@@ -596,7 +596,7 @@ class PersistentSubscriptionTest
 
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
-            executeUntil(persistentSubscription::hasFailed, () -> persistentSubscription.controlledPoll(null, 1));
+            executeUntil(persistentSubscription::hasFailed, () -> poll(persistentSubscription, null, 1));
 
             assertEquals(1, listener.errorCount);
             assertEquals(ArchiveException.class, listener.lastException.getClass());
@@ -622,7 +622,7 @@ class PersistentSubscriptionTest
         {
             executeUntil(
                 persistentSubscription::hasFailed,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+                () -> poll(persistentSubscription, fragmentHandler, 1));
             assertEquals(1, listener.errorCount);
             assertEquals(ArchiveException.class, listener.lastException.getClass());
         }
@@ -642,7 +642,7 @@ class PersistentSubscriptionTest
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
             executeUntil(persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+                () -> poll(persistentSubscription, fragmentHandler, 10));
 
             assertEquals(0, fragmentHandler.receivedPayloads.size());
 
@@ -651,7 +651,7 @@ class PersistentSubscriptionTest
 
             executeUntil(
                 () -> fragmentHandler.hasReceivedPayloads(messages.size()),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+                () -> poll(persistentSubscription, fragmentHandler, 10)
             );
 
             Tests.await(() -> archive.context().replaySessionCounter().get() == 0);
@@ -675,7 +675,7 @@ class PersistentSubscriptionTest
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
             executeUntil(persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+                () -> poll(persistentSubscription, fragmentHandler, 10));
 
             assertEquals(1, listener.liveJoinedCount);
 
@@ -685,7 +685,7 @@ class PersistentSubscriptionTest
             persistentPublication.persist(newMessages);
 
             executeUntil(() -> fragmentHandler.hasReceivedPayloads(newMessages.size()),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+                () -> poll(persistentSubscription, fragmentHandler, 10));
 
             assertPayloads(fragmentHandler.receivedPayloads, newMessages);
         }
@@ -705,7 +705,7 @@ class PersistentSubscriptionTest
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
             executeUntil(persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+                () -> poll(persistentSubscription, fragmentHandler, 10));
 
             assertEquals(1, listener.liveJoinedCount);
 
@@ -715,7 +715,7 @@ class PersistentSubscriptionTest
             persistentPublication.persist(messages);
 
             executeUntil(() -> fragmentHandler.hasReceivedPayloads(messages.size()),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+                () -> poll(persistentSubscription, fragmentHandler, 10));
 
             assertPayloads(fragmentHandler.receivedPayloads, messages);
         }
@@ -745,7 +745,7 @@ class PersistentSubscriptionTest
             // Start trying to join live while the live publication is stopped.
             executeUntil(
                 () -> listener.errorCount > 0,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1)
+                () -> poll(persistentSubscription, fragmentHandler, 1)
             );
             assertThat(
                 listener.lastException.getMessage(),
@@ -760,14 +760,14 @@ class PersistentSubscriptionTest
 
             executeUntil(
                 persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+                () -> poll(persistentSubscription, fragmentHandler, 10)
             );
 
             final List<byte[]> messages = generateRandomPayloads(5);
             resumedPublication.persist(messages);
 
             executeUntil(() -> fragmentHandler.hasReceivedPayloads(messages.size()),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+                () -> poll(persistentSubscription, fragmentHandler, 10));
 
             assertPayloads(fragmentHandler.receivedPayloads, messages);
         }
@@ -804,7 +804,7 @@ class PersistentSubscriptionTest
 
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
-            final Runnable pollSubscription = () -> persistentSubscription.controlledPoll(fragmentHandler, 10);
+            final Runnable pollSubscription = () -> poll(persistentSubscription, fragmentHandler, 10);
 
             executeUntil(persistentSubscription::isLive, pollSubscription);
 
@@ -868,12 +868,12 @@ class PersistentSubscriptionTest
         {
             executeUntil(
                 () -> listener.errorCount > 1,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+                () -> poll(persistentSubscription, fragmentHandler, 1));
             assertEquals(TimeoutException.class, listener.lastException.getClass());
             addCloseable(Archive.launch(localArchiveCtxTpl.clone()));
             executeUntil(
                 persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+                () -> poll(persistentSubscription, fragmentHandler, 1));
         }
     }
 
@@ -899,11 +899,11 @@ class PersistentSubscriptionTest
         {
             executeUntil(
                 persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+                () -> poll(persistentSubscription, fragmentHandler, 1));
             persistentPublication.publish(secondMessageBatch);
             executeUntil(
                 () -> fragmentHandler.hasReceivedPayloads(secondMessageBatch.size()),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+                () -> poll(persistentSubscription, fragmentHandler, 1));
             assertPayloads(fragmentHandler.receivedPayloads, secondMessageBatch);
         }
     }
@@ -926,7 +926,7 @@ class PersistentSubscriptionTest
 
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
-            executeUntil(persistentSubscription::hasFailed, () -> persistentSubscription.controlledPoll(null, 1));
+            executeUntil(persistentSubscription::hasFailed, () -> poll(persistentSubscription, null, 1));
 
             assertEquals(1, listener.errorCount);
             assertEquals(
@@ -954,14 +954,14 @@ class PersistentSubscriptionTest
         {
             executeUntil(
                 persistentSubscription::isReplaying,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, fragmentLimit)
+                () -> poll(persistentSubscription, fragmentHandler, fragmentLimit)
             );
 
             executeUntil(
                 () -> fragmentHandler.hasReceivedPayloads(persistentPublication.publishedMessageCount),
                 () ->
                 {
-                    persistentSubscription.controlledPoll(fragmentHandler, fragmentLimit);
+                    poll(persistentSubscription, fragmentHandler, fragmentLimit);
                     assertTrue(persistentSubscription.isReplaying());
                 });
 
@@ -971,7 +971,7 @@ class PersistentSubscriptionTest
 
             executeUntil(
                 persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, fragmentLimit));
+                () -> poll(persistentSubscription, fragmentHandler, fragmentLimit));
             assertEquals(1, listener.liveJoinedCount);
             assertEquals(5, fragmentHandler.receivedPayloads.size());
 
@@ -982,7 +982,7 @@ class PersistentSubscriptionTest
                 () -> fragmentHandler.hasReceivedPayloads(persistentPublication.publishedMessageCount),
                 () ->
                 {
-                    persistentSubscription.controlledPoll(fragmentHandler, fragmentLimit);
+                    poll(persistentSubscription, fragmentHandler, fragmentLimit);
 
                     // expect remaining messages to be consumed on the live channel
                     assertTrue(persistentSubscription.isLive());
@@ -1033,13 +1033,13 @@ class PersistentSubscriptionTest
             // Start consuming messages over replay.
             executeUntil(
                 () -> fragmentHandler.hasReceivedPayloads(1),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1)
+                () -> poll(persistentSubscription, fragmentHandler, 1)
             );
             executeUntil(
                 () -> fragmentHandler.hasReceivedPayloads(persistentPublication.publishedMessageCount()),
                 () ->
                 {
-                    persistentSubscription.controlledPoll(fragmentHandler, 1);
+                    poll(persistentSubscription, fragmentHandler, 1);
                     assertTrue(persistentSubscription.isReplaying());
                 }
             );
@@ -1054,7 +1054,7 @@ class PersistentSubscriptionTest
             // Poll the Persistent Subscription until it has added the live channel.
             executeUntil(
                 () -> persistentSubscription.joinError() != Long.MIN_VALUE,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+                () -> poll(persistentSubscription, fragmentHandler, 10)
             );
 
             // Allow the persistent subscription to continue consuming over replay, and then join live.
@@ -1063,7 +1063,7 @@ class PersistentSubscriptionTest
             executeUntil(
                 () -> fragmentHandler.hasReceivedPayloads(persistentPublication.publishedMessageCount()) &&
                     persistentSubscription.isLive(),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+                () -> poll(persistentSubscription, fragmentHandler, 10)
             );
 
             // Verify the live position was added ahead of the replay position.
@@ -1073,7 +1073,7 @@ class PersistentSubscriptionTest
             persistentPublication.publish(messagesToConsumeOnLive);
             executeUntil(
                 () -> fragmentHandler.hasReceivedPayloads(persistentPublication.publishedMessageCount()),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+                () -> poll(persistentSubscription, fragmentHandler, 10)
             );
             assertTrue(persistentSubscription.isLive());
             assertPayloads(
@@ -1115,20 +1115,20 @@ class PersistentSubscriptionTest
             // The persistent subscription can consume all 32k from the archive
             executeUntil(
                 () -> fragmentHandler.hasReceivedPayloads(32),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+                () -> poll(persistentSubscription, fragmentHandler, 10));
 
             assertTrue(persistentSubscription.isReplaying());
 
             executeUntil(
                 () -> persistentPublication.receiverCount() == 2,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+                () -> poll(persistentSubscription, fragmentHandler, 10)
             );
 
             // Consuming on the slower consumer allows the sender to send more than the initial 4k
             executeUntil(persistentSubscription::isLive,
                 () ->
                 {
-                    persistentSubscription.controlledPoll(fragmentHandler, 10);
+                    poll(persistentSubscription, fragmentHandler, 10);
                     slowConsumer.poll((b, o, l, h) -> {}, 10);
                 });
             // The persistent subscription will add the live chanel when live is at 4k,
@@ -1228,7 +1228,7 @@ class PersistentSubscriptionTest
 
             while (!persistentSubscription.isLive())
             {
-                if (persistentSubscription.controlledPoll(handler, 10) == 0)
+                if (poll(persistentSubscription, handler, 10) == 0)
                 {
                     checkForInterrupt("failed to transition to live");
                 }
@@ -1239,7 +1239,7 @@ class PersistentSubscriptionTest
 
             while (handler.position < lastPosition)
             {
-                if (persistentSubscription.controlledPoll(handler, 10) == 0)
+                if (poll(persistentSubscription, handler, 10) == 0)
                 {
                     checkForInterrupt("failed to drain the stream");
                 }
@@ -1313,19 +1313,19 @@ class PersistentSubscriptionTest
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
             executeUntil(persistentSubscription::isReplaying,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+                () -> poll(persistentSubscription, fragmentHandler, 1));
 
             assertEquals(0, fragmentHandler.receivedPayloads.size());
 
             executeUntil(persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+                () -> poll(persistentSubscription, fragmentHandler, 1));
 
             assertEquals(0, fragmentHandler.receivedPayloads.size());
 
             frameDataLossGenerator.disable();
 
             executeUntil(() -> fragmentHandler.hasReceivedPayloads(1),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+                () -> poll(persistentSubscription, fragmentHandler, 1));
 
             assertPayloads(fragmentHandler.receivedPayloads, List.of(largeMessage));
         }
@@ -1350,18 +1350,18 @@ class PersistentSubscriptionTest
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
             executeUntil(() -> fragmentHandler.hasReceivedPayloads(oldMessages.size()), () ->
-                persistentSubscription.controlledPoll(fragmentHandler, 10));
+                poll(persistentSubscription, fragmentHandler, 10));
 
             assertPayloads(fragmentHandler.receivedPayloads, oldMessages);
 
             executeUntil(persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+                () -> poll(persistentSubscription, fragmentHandler, 10));
 
             final List<byte[]> newMessages = generateFixedPayloads(16, ONE_KB_MESSAGE_SIZE);
             persistentPublication.publish(newMessages);
 
             executeUntil(() -> fragmentHandler.hasReceivedPayloads(oldMessages.size() + newMessages.size()),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+                () -> poll(persistentSubscription, fragmentHandler, 10));
 
             assertTrue(persistentSubscription.isLive());
             assertFalse(persistentSubscription.isReplaying());
@@ -1391,13 +1391,13 @@ class PersistentSubscriptionTest
         {
             // Ensure we can still consume from replay
             executeUntil(() -> fragmentHandler.hasReceivedPayloads(oldMessages.size()), () ->
-                persistentSubscription.controlledPoll(fragmentHandler, 10));
+                poll(persistentSubscription, fragmentHandler, 10));
 
             assertPayloads(fragmentHandler.receivedPayloads, oldMessages);
 
             executeUntil(
                 () -> listener.errorCount > 0,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+                () -> poll(persistentSubscription, fragmentHandler, 10)
             );
             assertThat(
                 listener.lastException.getMessage(),
@@ -1411,14 +1411,14 @@ class PersistentSubscriptionTest
 
             executeUntil(
                 persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+                () -> poll(persistentSubscription, fragmentHandler, 10)
             );
 
             final List<byte[]> newMessages = generateFixedPayloads(16, ONE_KB_MESSAGE_SIZE);
             resumedPublication.persist(newMessages);
 
             executeUntil(() -> fragmentHandler.hasReceivedPayloads(oldMessages.size() + newMessages.size()),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+                () -> poll(persistentSubscription, fragmentHandler, 10));
 
             assertTrue(persistentSubscription.isLive());
             assertFalse(persistentSubscription.isReplaying());
@@ -1458,12 +1458,12 @@ class PersistentSubscriptionTest
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
             executeUntil(() -> fragmentHandler.hasReceivedPayloads(recordedMessages.size()),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+                () -> poll(persistentSubscription, fragmentHandler, 10));
 
             assertTrue(persistentSubscription.isReplaying());
 
             executeUntil(persistentSubscription::hasFailed,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+                () -> poll(persistentSubscription, fragmentHandler, 1));
 
             assertEquals(recordedMessages.size(), fragmentHandler.receivedPayloads.size());
             assertEquals(1, listener.errorCount);
@@ -1496,7 +1496,7 @@ class PersistentSubscriptionTest
         {
             executeUntil(
                 () -> fragmentHandler.hasReceivedPayloads(5),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+                () -> poll(persistentSubscription, fragmentHandler, 10)
             );
 
             assertTrue(persistentSubscription.isReplaying());
@@ -1504,7 +1504,7 @@ class PersistentSubscriptionTest
 
             executeUntil(
                 () -> listener.errorCount > 0,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+                () -> poll(persistentSubscription, fragmentHandler, 10)
             );
             assertThat(
                 listener.lastException.getMessage(),
@@ -1518,7 +1518,7 @@ class PersistentSubscriptionTest
 
             executeUntil(
                 () -> fragmentHandler.hasReceivedPayloads(messages.size() + moreMessages.size()),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+                () -> poll(persistentSubscription, fragmentHandler, 10)
             );
 
             assertTrue(persistentSubscription.isReplaying());
@@ -1548,7 +1548,7 @@ class PersistentSubscriptionTest
             // Start consuming messages from live
             executeUntil(
                 persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+                () -> poll(persistentSubscription, fragmentHandler, 10)
             );
             assertEquals(1, listener.liveJoinedCount);
             assertEquals(0, archive.context().replaySessionCounter().get());
@@ -1559,7 +1559,7 @@ class PersistentSubscriptionTest
 
             executeUntil(
                 () -> fragmentHandler.hasReceivedPayloads(secondMessageBatch.size()),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+                () -> poll(persistentSubscription, fragmentHandler, 10)
             );
 
             // Publish more messages and consume them from a 'faster' consumer, forcing the Persistent Subscription
@@ -1590,7 +1590,7 @@ class PersistentSubscriptionTest
                 // Verify the Persistent Subscription drops back to replay
                 executeUntil(
                     persistentSubscription::isReplaying,
-                    () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+                    () -> poll(persistentSubscription, fragmentHandler, 10)
                 );
                 assertTrue(persistentSubscription.isReplaying());
 
@@ -1605,7 +1605,7 @@ class PersistentSubscriptionTest
 
                 executeUntil(
                     () -> fragmentHandler.hasReceivedPayloads(expectedMessageCount) && persistentSubscription.isLive(),
-                    () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+                    () -> poll(persistentSubscription, fragmentHandler, 10));
 
                 assertEquals(2, listener.liveJoinedCount);
 
@@ -1644,7 +1644,7 @@ class PersistentSubscriptionTest
         {
             executeUntil(
                 persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+                () -> poll(persistentSubscription, fragmentHandler, 1));
 
             // Consume a batch of messages on live
             final List<byte[]> firstMessageBatch = generateFixedPayloads(5, ONE_KB_MESSAGE_SIZE);
@@ -1662,7 +1662,7 @@ class PersistentSubscriptionTest
 
             executeUntil(
                 () -> fragmentHandler.hasReceivedPayloads(firstMessageBatch.size() + secondMessageBatch.size()),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+                () -> poll(persistentSubscription, fragmentHandler, 10)
             );
 
             // Allow a faster consumer to advance ahead, causing the persistent subscription to drop from live.
@@ -1682,7 +1682,7 @@ class PersistentSubscriptionTest
             // the recording.
             executeUntil(
                 persistentSubscription::hasFailed,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+                () -> poll(persistentSubscription, fragmentHandler, 10)
             );
             assertEquals(ArchiveException.class, listener.lastException.getClass());
             assertThat(
@@ -1717,7 +1717,7 @@ class PersistentSubscriptionTest
         {
             executeUntil(
                 persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+                () -> poll(persistentSubscription, fragmentHandler, 1));
 
             // Consume a batch of messages on live
             final List<byte[]> firstMessageBatch = generateFixedPayloads(5, ONE_KB_MESSAGE_SIZE);
@@ -1746,7 +1746,7 @@ class PersistentSubscriptionTest
             // Verify we cannot fall back to replay, as the recording no longer exists
             executeUntil(
                 persistentSubscription::hasFailed,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10),
+                () -> poll(persistentSubscription, fragmentHandler, 10),
                 description(persistentSubscription, fragmentHandler, listener)
             );
             assertEquals(ArchiveException.class, listener.lastException.getClass());
@@ -1812,7 +1812,7 @@ class PersistentSubscriptionTest
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
             executeUntil(persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+                () -> poll(persistentSubscription, fragmentHandler, 1));
 
             assertEquals(persistentPublication.publishedMessageCount, fragmentHandler.receivedPayloads.size());
 
@@ -1829,11 +1829,11 @@ class PersistentSubscriptionTest
 
             executeUntil(
                 persistentSubscription::isReplaying,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+                () -> poll(persistentSubscription, fragmentHandler, 10)
             );
             executeUntil(
                 persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+                () -> poll(persistentSubscription, fragmentHandler, 10)
             );
             assertPayloads(fragmentHandler.receivedPayloads, firstMessageBatch, secondMessageBatch, thirdMessagesBatch);
         }
@@ -1859,7 +1859,7 @@ class PersistentSubscriptionTest
             executeUntil(
                 () -> fragmentHandler.hasReceivedPayloads(persistentPublication.publishedMessageCount()) &&
                       persistentSubscription.isLive(),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+                () -> poll(persistentSubscription, fragmentHandler, 10));
 
             archive.close();
 
@@ -1867,7 +1867,7 @@ class PersistentSubscriptionTest
 
             executeUntil(
                 () -> fragmentHandler.hasReceivedPayloads(persistentPublication.publishedMessageCount()),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+                () -> poll(persistentSubscription, fragmentHandler, 10));
 
             assertPayloads(fragmentHandler.receivedPayloads, firstMessageBatch, secondMessageBatch);
         }
@@ -1918,7 +1918,7 @@ class PersistentSubscriptionTest
         {
             executeUntil(
                 persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1)
+                () -> poll(persistentSubscription, fragmentHandler, 1)
             );
 
             final AtomicBoolean keepDroppingAfterMatch = new AtomicBoolean(false);
@@ -1938,7 +1938,7 @@ class PersistentSubscriptionTest
 
             executeUntil(
                 persistentSubscription::isReplaying,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1)
+                () -> poll(persistentSubscription, fragmentHandler, 1)
             );
             assertTrue(fragmentHandler.receivedPayloads.isEmpty());
 
@@ -1946,7 +1946,7 @@ class PersistentSubscriptionTest
 
             executeUntil(
                 persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1)
+                () -> poll(persistentSubscription, fragmentHandler, 1)
             );
             assertPayloads(fragmentHandler.receivedPayloads, List.of(largeMessage));
         }
@@ -1975,7 +1975,7 @@ class PersistentSubscriptionTest
 
             executeUntil(
                 persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+                () -> poll(persistentSubscription, fragmentHandler, 10)
             );
             persistentPublication.persist(generateFixedPayloads(32, ONE_KB_MESSAGE_SIZE));
             executeUntil(
@@ -1990,14 +1990,14 @@ class PersistentSubscriptionTest
 
             executeUntil(
                 () -> fragmentHandler.hasReceivedPayloads(64),
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10)
+                () -> poll(persistentSubscription, fragmentHandler, 10)
             );
 
             assertTrue(persistentSubscription.isReplaying());
 
             executeUntil(
                 persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1)
+                () -> poll(persistentSubscription, fragmentHandler, 1)
             );
         }
     }
@@ -2011,7 +2011,7 @@ class PersistentSubscriptionTest
 
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
-            executeUntil(persistentSubscription::hasFailed, () -> persistentSubscription.controlledPoll(null, 1));
+            executeUntil(persistentSubscription::hasFailed, () -> poll(persistentSubscription, null, 1));
 
             assertEquals(1, listener.errorCount);
             assertEquals(
@@ -2036,7 +2036,7 @@ class PersistentSubscriptionTest
 
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
-            executeUntil(persistentSubscription::hasFailed, () -> persistentSubscription.controlledPoll(null, 1));
+            executeUntil(persistentSubscription::hasFailed, () -> poll(persistentSubscription, null, 1));
 
             assertEquals(1, listener.errorCount);
             assertEquals(
@@ -2070,7 +2070,7 @@ class PersistentSubscriptionTest
         {
             executeUntil(
                 persistentSubscription::isLive,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+                () -> poll(persistentSubscription, fragmentHandler, 10));
 
             Tests.await(subscription::isConnected);
             Tests.await(() -> subscription.imageCount() > 0);
@@ -2081,7 +2081,7 @@ class PersistentSubscriptionTest
 
             executeUntil(
                 () -> listener.errorCount > 0,
-                () -> persistentSubscription.controlledPoll(fragmentHandler, 1));
+                () -> poll(persistentSubscription, fragmentHandler, 1));
             assertEquals(ArchiveException.class, listener.lastException.getClass());
             assertTrue(persistentSubscription.hasFailed());
         }
@@ -2182,7 +2182,7 @@ class PersistentSubscriptionTest
 
             while (!persistentSubscription.isLive())
             {
-                if (persistentSubscription.controlledPoll(handler, 10) == 0)
+                if (poll(persistentSubscription, handler, 10) == 0)
                 {
                     checkForInterrupt("failed to transition to live");
                 }
@@ -2221,7 +2221,7 @@ class PersistentSubscriptionTest
 
                 while (true)
                 {
-                    if (persistentSubscription.controlledPoll(handler, 10) == 0)
+                    if (poll(persistentSubscription, handler, 10) == 0)
                     {
                         checkForInterrupt("interrupted while simulating live channel network problems");
                     }
@@ -2256,7 +2256,7 @@ class PersistentSubscriptionTest
 
             while (handler.position < lastPosition)
             {
-                if (persistentSubscription.controlledPoll(handler, 10) == 0)
+                if (poll(persistentSubscription, handler, 10) == 0)
                 {
                     checkForInterrupt("failed to drain the stream");
                 }
@@ -2273,7 +2273,7 @@ class PersistentSubscriptionTest
 
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
-            executeUntil(persistentSubscription::hasFailed, () -> persistentSubscription.controlledPoll(null, 1));
+            executeUntil(persistentSubscription::hasFailed, () -> poll(persistentSubscription, null, 1));
         }
     }
 
@@ -2299,7 +2299,7 @@ class PersistentSubscriptionTest
         final PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx);
         executeUntil(
             persistentSubscription::isLive,
-            () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+            () -> poll(persistentSubscription, fragmentHandler, 10));
         final Aeron aeron = persistentSubscriptionCtx.aeron();
         assertNotNull(aeron);
         persistentSubscription.close();
@@ -2324,9 +2324,17 @@ class PersistentSubscriptionTest
         final PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx);
         executeUntil(
             persistentSubscription::isLive,
-            () -> persistentSubscription.controlledPoll(fragmentHandler, 10));
+            () -> poll(persistentSubscription, fragmentHandler, 10));
         persistentSubscription.close();
         assertFalse(aeron.isClosed());
+    }
+
+    private int poll(
+        final PersistentSubscription persistentSubscription,
+        final ControlledFragmentHandler fragmentHandler,
+        final int fragmentLimit)
+    {
+        return persistentSubscription.controlledPoll(fragmentHandler, fragmentLimit);
     }
 
     private static ReceiveChannelEndpointSupplier receiveChannelEndpointSupplier(final LossGenerator lossGenerator)
