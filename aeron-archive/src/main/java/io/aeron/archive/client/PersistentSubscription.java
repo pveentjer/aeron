@@ -1240,7 +1240,7 @@ public final class PersistentSubscription implements AutoCloseable
             this.state = newState;
             if (!stateCounter.isClosed())
             {
-                stateCounter.setRelease(state.ordinal());
+                stateCounter.setRelease(state.code);
             }
         }
     }
@@ -1321,24 +1321,36 @@ public final class PersistentSubscription implements AutoCloseable
 
     private enum State
     {
-        AWAIT_ARCHIVE_CONNECTION,
-        SEND_LIST_RECORDING_REQUEST,
-        AWAIT_LIST_RECORDING_RESPONSE,
-        SEND_REPLAY_REQUEST,
-        AWAIT_REPLAY_RESPONSE,
-        ADD_REPLAY_SUBSCRIPTION,
-        AWAIT_REPLAY_SUBSCRIPTION,
-        AWAIT_REPLAY_CHANNEL_ENDPOINT,
-        ADD_REQUEST_PUBLICATION,
-        AWAIT_REQUEST_PUBLICATION,
-        SEND_REPLAY_TOKEN_REQUEST,
-        AWAIT_REPLAY_TOKEN,
-        REPLAY,
-        ATTEMPT_SWITCH,
-        ADD_LIVE_SUBSCRIPTION,
-        AWAIT_LIVE,
-        LIVE,
-        FAILED,
+        AWAIT_ARCHIVE_CONNECTION(0),
+        SEND_LIST_RECORDING_REQUEST(1),
+        AWAIT_LIST_RECORDING_RESPONSE(2),
+        SEND_REPLAY_REQUEST(3),
+        AWAIT_REPLAY_RESPONSE(4),
+        ADD_REPLAY_SUBSCRIPTION(5),
+        AWAIT_REPLAY_SUBSCRIPTION(6),
+        AWAIT_REPLAY_CHANNEL_ENDPOINT(7),
+        ADD_REQUEST_PUBLICATION(8),
+        AWAIT_REQUEST_PUBLICATION(9),
+        SEND_REPLAY_TOKEN_REQUEST(10),
+        AWAIT_REPLAY_TOKEN(11),
+        REPLAY(12),
+        ATTEMPT_SWITCH(13),
+        ADD_LIVE_SUBSCRIPTION(14),
+        AWAIT_LIVE(15),
+        LIVE(16),
+        FAILED(17);
+
+        private final int code;
+
+        State(final int code)
+        {
+            if (code != ordinal())
+            {
+                throw new IllegalArgumentException(name() + " - code must equal ordinal value: code=" + code);
+            }
+
+            this.code = code;
+        }
     }
 
     private static class AsyncArchiveOp
