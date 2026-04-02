@@ -56,11 +56,17 @@ public final class PersistentSubscription implements AutoCloseable
     public static final long FROM_START = NULL_POSITION;
     public static final long FROM_LIVE = -2;
 
-    private final ImageControlledFragmentAssembler controlledFragmentAssembler = new ImageControlledFragmentAssembler(this::onFragmentControlled);
-    private final ImageFragmentAssembler uncontrolledFragmentAssembler = new ImageFragmentAssembler(this::onFragmentUncontrolled);
+    private final ImageControlledFragmentAssembler controlledFragmentAssembler = new ImageControlledFragmentAssembler(
+        this::onFragmentControlled
+    );
+    private final ImageFragmentAssembler uncontrolledFragmentAssembler = new ImageFragmentAssembler(
+        this::onFragmentUncontrolled
+    );
     private final ControlledFragmentHandler liveCatchupFragmentHandler = this::onLiveCatchupFragment;
-    private final ControlledFragmentHandler replayCatchupControlledFragmentHandler = this::onReplayCatchupFragmentControlled;
-    private final ControlledFragmentHandler replayCatchupUncontrolledFragmentHandler = this::onReplayCatchupFragmentUncontrolled;
+    private final ControlledFragmentHandler replayCatchupControlledFragmentHandler =
+        this::onReplayCatchupFragmentControlled;
+    private final ControlledFragmentHandler replayCatchupUncontrolledFragmentHandler =
+        this::onReplayCatchupFragmentUncontrolled;
     private final ListRecordingRequest listRecordingRequest = new ListRecordingRequest();
     private final MaxRecordedPosition maxRecordedPosition = new MaxRecordedPosition();
     private final AsyncArchiveOp replayRequest = new AsyncArchiveOp();
