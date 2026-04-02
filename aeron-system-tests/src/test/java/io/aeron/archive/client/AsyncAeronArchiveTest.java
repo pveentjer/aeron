@@ -134,6 +134,7 @@ class AsyncAeronArchiveTest
 
     @Test
     @InterruptAfter(10)
+    @SuppressWarnings("methodlength")
     void test()
     {
         final TestListener listener = new TestListener();
