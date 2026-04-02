@@ -303,11 +303,9 @@ abstract class PersistentSubscriptionTest
                 final List<byte[]> fourthMessageBatch = generateFixedPayloads(5, ONE_KB_MESSAGE_SIZE);
                 persistentPublication.persist(fourthMessageBatch);
 
-                final int expectedMessageCount = firstMessageBatch.size() +
-                    secondMessageBatch.size() + thirdMessageBatch.size() + fourthMessageBatch.size();
-
                 executeUntil(
-                    () -> fragmentHandler.hasReceivedPayloads(expectedMessageCount) && persistentSubscription.isLive(),
+                    () -> fragmentHandler.hasReceivedPayloads(persistentPublication.publishedMessageCount) &&
+                        persistentSubscription.isLive(),
                     () -> poll(persistentSubscription, fragmentHandler, 10));
 
                 assertEquals(2, listener.liveJoinedCount);
@@ -1139,6 +1137,7 @@ abstract class PersistentSubscriptionTest
 
     @Test
     @InterruptAfter(60)
+    @SuppressWarnings("methodlength")
     void canJoinLiveWhenLiveAndReplayAreAdvancing() throws Exception
     {
         final String pubChannel = "aeron:udp?term-length=16m|control=localhost:24325|control-mode=dynamic|fc=min";
@@ -2107,6 +2106,7 @@ abstract class PersistentSubscriptionTest
         LIVE,
     }
 
+    @SuppressWarnings("methodlength")
     private void shouldRecoverFromNetworkProblems(final NetworkFlow victimFlow) throws Exception
     {
         TestMediaDriver.notSupportedOnCMediaDriver("loss generator");
@@ -2607,14 +2607,22 @@ abstract class PersistentSubscriptionTest
 
     private interface FragmentConsumer
     {
-        ControlledFragmentHandler.Action consumeFragment(final DirectBuffer buffer, final int offset, final int length, final Header header);
+        ControlledFragmentHandler.Action consumeFragment(DirectBuffer buffer, int offset, int length, Header header);
 
-        default ControlledFragmentHandler.Action onFragmentControlled(final DirectBuffer buffer, final int offset, final int length, final Header header)
+        default ControlledFragmentHandler.Action onFragmentControlled(
+            final DirectBuffer buffer,
+            final int offset,
+            final int length,
+            final Header header)
         {
             return consumeFragment(buffer, offset, length, header);
         }
 
-        default void onFragmentUncontrolled(final DirectBuffer buffer, final int offset, final int length, final Header header)
+        default void onFragmentUncontrolled(
+            final DirectBuffer buffer,
+            final int offset,
+            final int length,
+            final Header header)
         {
             consumeFragment(buffer, offset, length, header);
         }
@@ -2631,7 +2639,11 @@ abstract class PersistentSubscriptionTest
             this.maxProcessingTime = maxProcessingTime;
         }
 
-        public ControlledFragmentHandler.Action consumeFragment(final DirectBuffer buffer, final int offset, final int length, final Header header)
+        public ControlledFragmentHandler.Action consumeFragment(
+            final DirectBuffer buffer,
+            final int offset,
+            final int length,
+            final Header header)
         {
             if (length < 2 * SIZE_OF_LONG)
             {
@@ -2659,7 +2671,11 @@ abstract class PersistentSubscriptionTest
         private final List<byte[]> receivedPayloads = new ArrayList<>();
         private long position;
 
-        public  ControlledFragmentHandler.Action consumeFragment(final DirectBuffer buffer, final int offset, final int length, final Header header)
+        public ControlledFragmentHandler.Action consumeFragment(
+            final DirectBuffer buffer,
+            final int offset,
+            final int length,
+            final Header header)
         {
             position = header.position();
             final byte[] bytes = new byte[length];
@@ -2906,9 +2922,9 @@ abstract class PersistentSubscriptionTest
     }
 
     abstract int poll(
-        final PersistentSubscription persistentSubscription,
-        final FragmentConsumer fragmentConsumer,
-        final int fragmentLimit
+        PersistentSubscription persistentSubscription,
+        FragmentConsumer fragmentConsumer,
+        int fragmentLimit
     );
 
     static class ControlledPollingPersistentSubscriptionTest extends PersistentSubscriptionTest
