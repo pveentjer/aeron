@@ -115,7 +115,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 @ExtendWith({ EventLogExtension.class, InterruptingTestCallback.class })
-class PersistentSubscriptionTest
+abstract class PersistentSubscriptionTest
 {
     private static final int ONE_KB_MESSAGE_SIZE = 1024 - DataHeaderFlyweight.HEADER_LENGTH;
     private static final int TERM_LENGTH = LogBufferDescriptor.TERM_MIN_LENGTH;
@@ -1447,7 +1447,7 @@ class PersistentSubscriptionTest
             final BufferingFragmentHandler subscriber2FragmentHandler = new BufferingFragmentHandler();
             executeUntil(
                 () -> subscriber2FragmentHandler.hasReceivedPayloads(messagesAfterRecording.size()),
-                () -> subscriber2.controlledPoll(subscriber2FragmentHandler, 10)
+                () -> subscriber2.controlledPoll(subscriber2FragmentHandler::onFragmentControlled, 10)
             );
         }
 
@@ -2329,14 +2329,6 @@ class PersistentSubscriptionTest
         assertFalse(aeron.isClosed());
     }
 
-    private int poll(
-        final PersistentSubscription persistentSubscription,
-        final ControlledFragmentHandler fragmentHandler,
-        final int fragmentLimit)
-    {
-        return persistentSubscription.controlledPoll(fragmentHandler, fragmentLimit);
-    }
-
     private static ReceiveChannelEndpointSupplier receiveChannelEndpointSupplier(final LossGenerator lossGenerator)
     {
         return (udpChannel, dispatcher, statusIndicator, context) ->
@@ -2400,40 +2392,6 @@ class PersistentSubscriptionTest
         final double uniform = ThreadLocalRandom.current().nextDouble();
         final double secondFraction = -Math.log(1.0 - uniform) / ratePerSecond;
         return (long)(secondFraction * 1e9);
-    }
-
-    private static final class MessageVerifier implements ControlledFragmentHandler
-    {
-        private final long maxProcessingTime;
-        long expectedMessageId;
-        long position;
-
-        private MessageVerifier(final long maxProcessingTime)
-        {
-            this.maxProcessingTime = maxProcessingTime;
-        }
-
-        public Action onFragment(final DirectBuffer buffer, final int offset, final int length, final Header header)
-        {
-            if (length < 2 * SIZE_OF_LONG)
-            {
-                throw new IllegalStateException("length was " + length);
-            }
-            final long messageId1 = buffer.getLong(offset);
-            final long messageId2 = buffer.getLong(offset + length - SIZE_OF_LONG);
-            if (messageId1 != messageId2)
-            {
-                throw new IllegalStateException("message had different ids " + messageId1 + " and " + messageId2);
-            }
-            if (messageId1 != expectedMessageId)
-            {
-                throw new IllegalStateException("expected id " + expectedMessageId + ", but got " + messageId1);
-            }
-            expectedMessageId = messageId1 + 1;
-            position = header.position();
-            simulateWork(maxProcessingTime);
-            return Action.CONTINUE;
-        }
     }
 
     private static final class PerSecondStats
@@ -2647,18 +2605,67 @@ class PersistentSubscriptionTest
         return uri.toString();
     }
 
-    private static final class BufferingFragmentHandler implements ControlledFragmentHandler
+    private interface FragmentConsumer
+    {
+        ControlledFragmentHandler.Action consumeFragment(final DirectBuffer buffer, final int offset, final int length, final Header header);
+
+        default ControlledFragmentHandler.Action onFragmentControlled(final DirectBuffer buffer, final int offset, final int length, final Header header)
+        {
+            return consumeFragment(buffer, offset, length, header);
+        }
+
+        default void onFragmentUncontrolled(final DirectBuffer buffer, final int offset, final int length, final Header header)
+        {
+            consumeFragment(buffer, offset, length, header);
+        }
+    }
+
+    private static final class MessageVerifier implements FragmentConsumer
+    {
+        private final long maxProcessingTime;
+        long expectedMessageId;
+        long position;
+
+        private MessageVerifier(final long maxProcessingTime)
+        {
+            this.maxProcessingTime = maxProcessingTime;
+        }
+
+        public ControlledFragmentHandler.Action consumeFragment(final DirectBuffer buffer, final int offset, final int length, final Header header)
+        {
+            if (length < 2 * SIZE_OF_LONG)
+            {
+                throw new IllegalStateException("length was " + length);
+            }
+            final long messageId1 = buffer.getLong(offset);
+            final long messageId2 = buffer.getLong(offset + length - SIZE_OF_LONG);
+            if (messageId1 != messageId2)
+            {
+                throw new IllegalStateException("message had different ids " + messageId1 + " and " + messageId2);
+            }
+            if (messageId1 != expectedMessageId)
+            {
+                throw new IllegalStateException("expected id " + expectedMessageId + ", but got " + messageId1);
+            }
+            expectedMessageId = messageId1 + 1;
+            position = header.position();
+            simulateWork(maxProcessingTime);
+            return ControlledFragmentHandler.Action.CONTINUE;
+        }
+    }
+
+    private static final class BufferingFragmentHandler implements FragmentConsumer
     {
         private final List<byte[]> receivedPayloads = new ArrayList<>();
         private long position;
 
-        public Action onFragment(final DirectBuffer buffer, final int offset, final int length, final Header header)
+        public  ControlledFragmentHandler.Action consumeFragment(final DirectBuffer buffer, final int offset, final int length, final Header header)
         {
             position = header.position();
             final byte[] bytes = new byte[length];
             buffer.getBytes(offset, bytes);
             receivedPayloads.add(bytes);
-            return Action.CONTINUE;
+            return ControlledFragmentHandler.Action.CONTINUE;
         }
 
         boolean hasReceivedPayloads(final int numberOfPayloads)
@@ -2895,6 +2902,40 @@ class PersistentSubscriptionTest
         {
             aeronArchive.stopRecording(publication);
             CloseHelper.close(publication);
+        }
+    }
+
+    abstract int poll(
+        final PersistentSubscription persistentSubscription,
+        final FragmentConsumer fragmentConsumer,
+        final int fragmentLimit
+    );
+
+    static class ControlledPollingPersistentSubscriptionTest extends PersistentSubscriptionTest
+    {
+        int poll(
+            final PersistentSubscription persistentSubscription,
+            final FragmentConsumer fragmentConsumer,
+            final int fragmentLimit)
+        {
+            final ControlledFragmentHandler fragmentHandler2 = fragmentConsumer == null ?
+                null :
+                fragmentConsumer::onFragmentControlled;
+            return persistentSubscription.controlledPoll(fragmentHandler2, fragmentLimit);
+        }
+    }
+
+    static class UncontrolledPollingPersistentSubscriptionTest extends PersistentSubscriptionTest
+    {
+        int poll(
+            final PersistentSubscription persistentSubscription,
+            final FragmentConsumer fragmentConsumer,
+            final int fragmentLimit)
+        {
+            final FragmentHandler fragmentHandler = fragmentConsumer == null ?
+                null :
+                fragmentConsumer::onFragmentUncontrolled;
+            return persistentSubscription.poll(fragmentHandler, fragmentLimit);
         }
     }
 }
