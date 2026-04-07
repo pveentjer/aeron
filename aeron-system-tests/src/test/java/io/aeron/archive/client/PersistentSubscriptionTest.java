@@ -1620,6 +1620,70 @@ abstract class PersistentSubscriptionTest
 
     @Test
     @InterruptAfter(10)
+    void untetheredSpyCanFallbackToReplay()
+    {
+        final PersistentPublication persistentPublication =
+            PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
+
+        persistentSubscriptionCtx
+            .recordingId(persistentPublication.recordingId())
+            .startPosition(FROM_LIVE)
+            .liveChannel(SPY_PREFIX +  MDC_PUBLICATION_CHANNEL + "|tether=false");
+
+        try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
+        {
+            executeUntil(
+                persistentSubscription::isLive,
+                () -> poll(persistentSubscription, fragmentHandler, 10)
+            );
+            assertEquals(0, listener.liveLeftCount);
+            assertEquals(0, fragmentHandler.receivedPayloads.size());
+
+            // Publish more messages and consume them from a 'faster' consumer, forcing the Persistent Subscription
+            // to fall behind and drop off live.
+            final MediaDriver.Context ctx = driverCtxTpl.clone()
+                .aeronDirectoryName(CommonContext.generateRandomDirName());
+            try (MediaDriver mediaDriver = MediaDriver.launch(ctx);
+                Aeron aeron = Aeron.connect(
+                    new Aeron.Context().aeronDirectoryName(mediaDriver.aeronDirectoryName())))
+            {
+                final CountingFragmentHandler fastSubscriptionFragmentHandler = new CountingFragmentHandler();
+                final Subscription fastConsumer = aeron.addSubscription(MDC_SUBSCRIPTION_CHANNEL, STREAM_ID);
+
+                Tests.awaitConnected(fastConsumer);
+
+                final List<byte[]> firstMessageBatch = new ArrayList<>();
+                for (int i = 0; i < 3; i++)
+                {
+                    final List<byte[]> batch = generateFixedPayloads(32, ONE_KB_MESSAGE_SIZE);
+                    persistentPublication.publish(batch);
+                    firstMessageBatch.addAll(batch);
+                    executeUntil(
+                        () -> fastSubscriptionFragmentHandler.hasReceivedPayloads(firstMessageBatch.size()),
+                        () -> fastConsumer.poll(fastSubscriptionFragmentHandler, 10)
+                    );
+                }
+                // Verify the Persistent Subscription drops back to replay
+                executeUntil(
+                    persistentSubscription::isReplaying,
+                    () -> poll(persistentSubscription, fragmentHandler, 10)
+                );
+                assertEquals(1, listener.liveLeftCount);
+
+                executeUntil(
+                    () -> fragmentHandler.hasReceivedPayloads(firstMessageBatch.size()) && persistentSubscription.isLive(),
+                    () -> poll(persistentSubscription, fragmentHandler, 10));
+
+                assertPayloads(
+                    fragmentHandler.receivedPayloads,
+                    firstMessageBatch
+                );
+            }
+        }
+    }
+
+    @Test
+    @InterruptAfter(10)
     void cannotFallbackToReplayWhenTheRecordingHasStoppedAtAnEarlierPosition()
     {
         final PersistentPublication persistentPublication =
