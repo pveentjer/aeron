@@ -256,35 +256,35 @@ class PersistentSubscriptionContextTest
     }
 
     @Test
-    void contextShouldCreateJoinErrorCounterIfNoneProvided()
+    void contextShouldCreateJoinDifferenceCounterIfNoneProvided()
     {
-        final Counter nullJoinErrorCounter = null;
-        context.stateCounter(nullJoinErrorCounter);
+        final Counter nullJoinDifferenceCounter = null;
+        context.stateCounter(nullJoinDifferenceCounter);
         context.conclude();
 
-        assertNotSame(nullJoinErrorCounter, context.joinErrorCounter());
-        assertNotNull(context.joinErrorCounter());
+        assertNotSame(nullJoinDifferenceCounter, context.joinDifferenceCounter());
+        assertNotNull(context.joinDifferenceCounter());
     }
 
     @Test
-    void contextShouldCreateTransitionToReplayCounterIfNoneProvided()
+    void contextShouldCreateLiveLeftCounterIfNoneProvided()
     {
-        final Counter nullTransitiontoReplayCounter = null;
-        context.transitionToReplayCounter(nullTransitiontoReplayCounter);
+        final Counter nullLiveLeftCounter = null;
+        context.liveLeftCounter(nullLiveLeftCounter);
         context.conclude();
 
-        assertNotSame(nullTransitiontoReplayCounter, context.transitionToReplayCounter());
-        assertNotNull(context.transitionToReplayCounter());
+        assertNotSame(nullLiveLeftCounter, context.liveLeftCounter());
+        assertNotNull(context.liveLeftCounter());
     }
 
     @Test
-    void contextShouldCreateTransitionToLiveCounterIfNoneProvided()
+    void contextShouldCreateLiveJoinedCounterIfNoneProvided()
     {
-        final Counter nullTransitiontoLiveCounter = null;
-        context.transitionToLiveCounter(nullTransitiontoLiveCounter);
+        final Counter nullLiveJoinedCounter = null;
+        context.liveJoinedCounter(nullLiveJoinedCounter);
         context.conclude();
 
-        assertNotSame(nullTransitiontoLiveCounter, context.transitionToLiveCounter());
-        assertNotNull(context.transitionToLiveCounter());
+        assertNotSame(nullLiveJoinedCounter, context.liveJoinedCounter());
+        assertNotNull(context.liveJoinedCounter());
     }
 }

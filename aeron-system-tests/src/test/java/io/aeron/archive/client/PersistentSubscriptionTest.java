@@ -989,7 +989,7 @@ abstract class PersistentSubscriptionTest
             assertTrue(persistentSubscription.isLive());
             assertFalse(persistentSubscription.isReplaying());
             assertEquals(0, listener.liveLeftCount);
-            assertEquals(0, persistentSubscription.joinError());
+            assertEquals(0, persistentSubscription.joinDifference());
             assertPayloads(fragmentHandler.receivedPayloads, replayMessages, liveMessages);
 
             Tests.await(() -> archive.context().replaySessionCounter().get() == 0);
@@ -1051,7 +1051,7 @@ abstract class PersistentSubscriptionTest
 
             // Poll the Persistent Subscription until it has added the live channel.
             executeUntil(
-                () -> persistentSubscription.joinError() != Long.MIN_VALUE,
+                () -> persistentSubscription.joinDifference() != Long.MIN_VALUE,
                 () -> poll(persistentSubscription, fragmentHandler, 10)
             );
 
@@ -1065,7 +1065,7 @@ abstract class PersistentSubscriptionTest
             );
 
             // Verify the live position was added ahead of the replay position.
-            assertEquals(2048, persistentSubscription.joinError());
+            assertEquals(2048, persistentSubscription.joinDifference());
 
             final List<byte[]> messagesToConsumeOnLive = generateFixedPayloads(2, ONE_KB_MESSAGE_SIZE);
             persistentPublication.publish(messagesToConsumeOnLive);
@@ -1131,7 +1131,7 @@ abstract class PersistentSubscriptionTest
                 });
             // The persistent subscription will add the live chanel when live is at 4k,
             // which is 28k behind where it got up to on replay
-            assertEquals(-28 * 1024L, persistentSubscription.joinError());
+            assertEquals(-28 * 1024L, persistentSubscription.joinDifference());
         }
     }
 
@@ -2375,7 +2375,7 @@ abstract class PersistentSubscriptionTest
     {
         final int elapsedSeconds = (int)((System.nanoTime() - t0 + 999_999_999) / 1_000_000_000);
 
-        System.out.println("join error = " + persistentSubscription.joinError());
+        System.out.println("join difference = " + persistentSubscription.joinDifference());
         System.out.println("expected rate per second = " + ratePerSecond);
         System.out.println("second,published,publisherBpe,control");
         for (int i = 0; i < elapsedSeconds; i++)
