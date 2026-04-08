@@ -163,25 +163,30 @@ static int aeron_archive_async_client_connecting(aeron_archive_async_client_t *c
 
     uint8_t step_before = aeron_archive_async_connect_step(client->async_connect);
 
-    if (aeron_archive_async_connect_poll(&client->archive, client->async_connect) < 0)
+    int poll_result = aeron_archive_async_connect_poll(&client->archive, client->async_connect);
+
+    if (poll_result == 0)
     {
-        client->async_connect = NULL;
-        client->listener->on_error(client->listener->clientd, aeron_errcode(), aeron_errmsg());
-        return 1;
+        // poll is still in progress, async_connect is still valid
+        uint8_t step_after = aeron_archive_async_connect_step(client->async_connect);
+        work_count += (step_after != step_before) ? 1 : 0;
+        return work_count;
     }
 
-    uint8_t step_after = aeron_archive_async_connect_step(client->async_connect);
-    work_count += (step_after != step_before) ? 1 : 0;
+    // poll completed and free'd async_connect; now report success or failure
+    client->async_connect = NULL;
 
-    if (NULL != client->archive)
+    if (poll_result < 0)
     {
-        client->async_connect = NULL;
+        client->listener->on_error(client->listener->clientd, aeron_errcode(), aeron_errmsg());
+    }
+    else
+    {
         client->state = AERON_ARCHIVE_ASYNC_CLIENT_CONNECTED;
         client->listener->on_connected(client->listener->clientd);
-        return 1;
     }
 
-    return work_count;
+    return 1;
 }
 
 static int aeron_archive_async_client_connected(aeron_archive_async_client_t *client)
