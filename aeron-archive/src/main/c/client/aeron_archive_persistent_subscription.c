@@ -567,10 +567,9 @@ static void clean_up_request_publication(aeron_archive_persistent_subscription_t
 {
     if (NULL != persistent_subscription->add_request_publication)
     {
-        // TODO once https://github.com/aeron-io/aeron/pull/1974 gets merged:
-        // aeron_async_add_exclusive_publication_cancel(
-        //     persistent_subscription->context->aeron,
-        //     persistent_subscription->add_request_publication);
+        aeron_async_add_exclusive_publication_cancel(
+            persistent_subscription->context->aeron,
+            persistent_subscription->add_request_publication);
     }
 
     if (NULL != persistent_subscription->request_publication)
@@ -605,10 +604,9 @@ static void clean_up_replay_subscription(aeron_archive_persistent_subscription_t
 {
     if (NULL != persistent_subscription->add_replay_subscription)
     {
-        // TODO once https://github.com/aeron-io/aeron/pull/1974 gets merged:
-        // aeron_async_add_subscription_cancel(
-        //     persistent_subscription->context->aeron,
-        //     persistent_subscription->add_replay_subscription);
+        aeron_async_add_subscription_cancel(
+            persistent_subscription->context->aeron,
+            persistent_subscription->add_replay_subscription);
     }
 
     if (NULL != persistent_subscription->replay_subscription)
@@ -625,10 +623,9 @@ static void clean_up_live_subscription(aeron_archive_persistent_subscription_t *
 {
     if (NULL != persistent_subscription->add_live_subscription)
     {
-        // TODO once https://github.com/aeron-io/aeron/pull/1974 gets merged:
-        // aeron_async_add_subscription_cancel(
-        //     persistent_subscription->context->aeron,
-        //     persistent_subscription->add_live_subscription);
+        aeron_async_add_subscription_cancel(
+            persistent_subscription->context->aeron,
+            persistent_subscription->add_live_subscription);
     }
 
     if (NULL != persistent_subscription->live_subscription)
