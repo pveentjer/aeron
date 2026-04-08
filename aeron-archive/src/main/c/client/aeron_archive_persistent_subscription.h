@@ -20,6 +20,11 @@
 #include "aeronc.h"
 #include "aeron_archive.h"
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 #define AERON_PERSISTENT_SUBSCRIPTION_FROM_START (INT64_C(-1))
 #define AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE  (INT64_C(-2))
 
@@ -173,6 +178,52 @@ int aeron_archive_persistent_subscription_context_set_listener(
     const aeron_archive_persistent_subscription_listener_t *listener);
 
 /**
+ * Set the counter for tracking the current state of the persistent subscription.
+ *
+ * @param context to configure.
+ * @param counter the state counter.
+ * @return 0 on success, -1 on error.
+ */
+int aeron_archive_persistent_subscription_context_set_state_counter(
+    aeron_archive_persistent_subscription_context_t *context,
+    aeron_counter_t *counter);
+
+/**
+ * Set the counter for tracking the join difference of the persistent subscription.
+ * The join difference is the difference between the live position and the replay position when
+ * transitioning. When not live, the value is INT64_MIN.
+ *
+ * @param context to configure.
+ * @param counter the join difference counter.
+ * @return 0 on success, -1 on error.
+ */
+int aeron_archive_persistent_subscription_context_set_join_difference_counter(
+    aeron_archive_persistent_subscription_context_t *context,
+    aeron_counter_t *counter);
+
+/**
+ * Set the counter for tracking the number of times the live stream has been left.
+ *
+ * @param context to configure.
+ * @param counter the live left counter.
+ * @return 0 on success, -1 on error.
+ */
+int aeron_archive_persistent_subscription_context_set_live_left_counter(
+    aeron_archive_persistent_subscription_context_t *context,
+    aeron_counter_t *counter);
+
+/**
+ * Set the counter for tracking the number of times live has been joined.
+ *
+ * @param context to configure.
+ * @param counter the live joined counter.
+ * @return 0 on success, -1 on error.
+ */
+int aeron_archive_persistent_subscription_context_set_live_joined_counter(
+    aeron_archive_persistent_subscription_context_t *context,
+    aeron_counter_t *counter);
+
+/**
  * Create a persistent subscription.
  * <p>
  * If creating a subscription succeeds, then the subscription will own the context. And closing the
@@ -242,5 +293,9 @@ bool aeron_archive_persistent_subscription_is_replaying(aeron_archive_persistent
  * @see aeron_archive_persistent_subscription_context_set_listener
  */
 bool aeron_archive_persistent_subscription_has_failed(aeron_archive_persistent_subscription_t *persistent_subscription);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif //AERON_AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_H

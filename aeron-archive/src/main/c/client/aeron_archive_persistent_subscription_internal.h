@@ -22,13 +22,13 @@
 int aeron_archive_persistent_subscription_context_conclude(aeron_archive_persistent_subscription_context_t *context);
 
 /**
- * Returns the join error, i.e. the difference between the live position and the replay position
+ * Returns the join difference, i.e. the difference between the live position and the replay position
  * at the point the switch to live was attempted. A negative value means the replay was ahead of
  * the live stream. Zero means they were aligned. INT64_MIN means no join has been attempted yet.
  *
  * @param persistent_subscription to check.
- * @return the join error.
+ * @return the join difference.
  */
-int64_t aeron_archive_persistent_subscription_join_error(aeron_archive_persistent_subscription_t *persistent_subscription);
+int64_t aeron_archive_persistent_subscription_join_difference(aeron_archive_persistent_subscription_t *persistent_subscription);
 
 #endif //AERON_AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_INTERNAL_H
