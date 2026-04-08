@@ -373,6 +373,7 @@ if (BUILD_AERON_ARCHIVE_API)
     if (AERON_TESTS)
         add_subdirectory(${AERON_C_ARCHIVE_TEST_PATH})
         add_subdirectory(${AERON_ARCHIVE_WRAPPER_TEST_PATH})
+        add_subdirectory(${AERON_SYSTEM_TEST_PATH}/src/test/cpp_wrapper ${CMAKE_CURRENT_BINARY_DIR}/aeron-system-tests-cpp)
     endif ()
 endif (BUILD_AERON_ARCHIVE_API)
 ##########################################################

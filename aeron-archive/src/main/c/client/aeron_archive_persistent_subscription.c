@@ -315,11 +315,23 @@ int aeron_archive_persistent_subscription_context_set_recording_id(
     return 0;
 }
 
+int64_t aeron_archive_persistent_subscription_context_get_recording_id(
+    aeron_archive_persistent_subscription_context_t *context)
+{
+    return context->recording_id;
+}
+
 int aeron_archive_persistent_subscription_context_set_live_channel(
     aeron_archive_persistent_subscription_context_t *context,
     const char *live_channel)
 {
     return set_string(&context->live_channel, live_channel);
+}
+
+const char *aeron_archive_persistent_subscription_context_get_live_channel(
+    aeron_archive_persistent_subscription_context_t *context)
+{
+    return context->live_channel;
 }
 
 int aeron_archive_persistent_subscription_context_set_live_stream_id(
@@ -331,11 +343,23 @@ int aeron_archive_persistent_subscription_context_set_live_stream_id(
     return 0;
 }
 
+int32_t aeron_archive_persistent_subscription_context_get_live_stream_id(
+    aeron_archive_persistent_subscription_context_t *context)
+{
+    return context->live_stream_id;
+}
+
 int aeron_archive_persistent_subscription_context_set_replay_channel(
     aeron_archive_persistent_subscription_context_t *context,
     const char *replay_channel)
 {
     return set_string(&context->replay_channel, replay_channel);
+}
+
+const char *aeron_archive_persistent_subscription_context_get_replay_channel(
+    aeron_archive_persistent_subscription_context_t *context)
+{
+    return context->replay_channel;
 }
 
 int aeron_archive_persistent_subscription_context_set_replay_stream_id(
@@ -347,6 +371,12 @@ int aeron_archive_persistent_subscription_context_set_replay_stream_id(
     return 0;
 }
 
+int32_t aeron_archive_persistent_subscription_context_get_replay_stream_id(
+    aeron_archive_persistent_subscription_context_t *context)
+{
+    return context->replay_stream_id;
+}
+
 int aeron_archive_persistent_subscription_context_set_start_position(
     aeron_archive_persistent_subscription_context_t *context,
     int64_t start_position)
@@ -354,6 +384,12 @@ int aeron_archive_persistent_subscription_context_set_start_position(
     context->start_position = start_position;
 
     return 0;
+}
+
+int64_t aeron_archive_persistent_subscription_context_get_start_position(
+    aeron_archive_persistent_subscription_context_t *context)
+{
+    return context->start_position;
 }
 
 int aeron_archive_persistent_subscription_context_set_listener(
@@ -386,6 +422,12 @@ int aeron_archive_persistent_subscription_context_set_state_counter(
     return 0;
 }
 
+aeron_counter_t *aeron_archive_persistent_subscription_context_get_state_counter(
+    aeron_archive_persistent_subscription_context_t *context)
+{
+    return context->state_counter;
+}
+
 int aeron_archive_persistent_subscription_context_set_join_difference_counter(
     aeron_archive_persistent_subscription_context_t *context,
     aeron_counter_t *counter)
@@ -393,6 +435,12 @@ int aeron_archive_persistent_subscription_context_set_join_difference_counter(
     context->join_difference_counter = counter;
 
     return 0;
+}
+
+aeron_counter_t *aeron_archive_persistent_subscription_context_get_join_difference_counter(
+    aeron_archive_persistent_subscription_context_t *context)
+{
+    return context->join_difference_counter;
 }
 
 int aeron_archive_persistent_subscription_context_set_live_left_counter(
@@ -404,6 +452,12 @@ int aeron_archive_persistent_subscription_context_set_live_left_counter(
     return 0;
 }
 
+aeron_counter_t *aeron_archive_persistent_subscription_context_get_live_left_counter(
+    aeron_archive_persistent_subscription_context_t *context)
+{
+    return context->live_left_counter;
+}
+
 int aeron_archive_persistent_subscription_context_set_live_joined_counter(
     aeron_archive_persistent_subscription_context_t *context,
     aeron_counter_t *counter)
@@ -411,6 +465,12 @@ int aeron_archive_persistent_subscription_context_set_live_joined_counter(
     context->live_joined_counter = counter;
 
     return 0;
+}
+
+aeron_counter_t *aeron_archive_persistent_subscription_context_get_live_joined_counter(
+    aeron_archive_persistent_subscription_context_t *context)
+{
+    return context->live_joined_counter;
 }
 
 static int persistent_subscription_allocate_counter(

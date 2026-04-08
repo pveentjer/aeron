@@ -111,6 +111,16 @@ int aeron_archive_persistent_subscription_context_set_recording_id(
     int64_t recording_id);
 
 /**
+ * Get the id of the live stream recording that will be used by the persistent subscription to catch up.
+ *
+ * @param context to query.
+ * @return the recording id.
+ * @see aeron_archive_persistent_subscription_context_set_recording_id
+ */
+int64_t aeron_archive_persistent_subscription_context_get_recording_id(
+    aeron_archive_persistent_subscription_context_t *context);
+
+/**
  * Set the live channel.
  *
  * @param context to configure.
@@ -120,6 +130,16 @@ int aeron_archive_persistent_subscription_context_set_recording_id(
 int aeron_archive_persistent_subscription_context_set_live_channel(
     aeron_archive_persistent_subscription_context_t *context,
     const char *live_channel);
+
+/**
+ * Get the live channel.
+ *
+ * @param context to query.
+ * @return the live channel.
+ * @see aeron_archive_persistent_subscription_context_set_live_channel
+ */
+const char *aeron_archive_persistent_subscription_context_get_live_channel(
+    aeron_archive_persistent_subscription_context_t *context);
 
 /**
  * Set the id of the live stream.
@@ -133,6 +153,16 @@ int aeron_archive_persistent_subscription_context_set_live_stream_id(
     int32_t live_stream_id);
 
 /**
+ * Get the id of the live stream.
+ *
+ * @param context to query.
+ * @return the live stream id.
+ * @see aeron_archive_persistent_subscription_context_set_live_stream_id
+ */
+int32_t aeron_archive_persistent_subscription_context_get_live_stream_id(
+    aeron_archive_persistent_subscription_context_t *context);
+
+/**
  * Set the channel used for replays.
  *
  * @param context to configure.
@@ -142,6 +172,16 @@ int aeron_archive_persistent_subscription_context_set_live_stream_id(
 int aeron_archive_persistent_subscription_context_set_replay_channel(
     aeron_archive_persistent_subscription_context_t *context,
     const char *replay_channel);
+
+/**
+ * Get the channel used for replays.
+ *
+ * @param context to query.
+ * @return the replay channel.
+ * @see aeron_archive_persistent_subscription_context_set_replay_channel
+ */
+const char *aeron_archive_persistent_subscription_context_get_replay_channel(
+    aeron_archive_persistent_subscription_context_t *context);
 
 /**
  * Set the id of the stream used for replays.
@@ -155,6 +195,16 @@ int aeron_archive_persistent_subscription_context_set_replay_stream_id(
     int32_t replay_stream_id);
 
 /**
+ * Get the id of the stream used for replays.
+ *
+ * @param context to query.
+ * @return the replay stream id.
+ * @see aeron_archive_persistent_subscription_context_set_replay_stream_id
+ */
+int32_t aeron_archive_persistent_subscription_context_get_replay_stream_id(
+    aeron_archive_persistent_subscription_context_t *context);
+
+/**
  * Set the position to start the subscription from, can be an actual position or
  * AERON_PERSISTENT_SUBSCRIPTION_FROM_START or AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE.
  *
@@ -165,6 +215,16 @@ int aeron_archive_persistent_subscription_context_set_replay_stream_id(
 int aeron_archive_persistent_subscription_context_set_start_position(
     aeron_archive_persistent_subscription_context_t *context,
     int64_t start_position);
+
+/**
+ * Get the position to start the subscription from.
+ *
+ * @param context to query.
+ * @return the start position.
+ * @see aeron_archive_persistent_subscription_context_set_start_position
+ */
+int64_t aeron_archive_persistent_subscription_context_get_start_position(
+    aeron_archive_persistent_subscription_context_t *context);
 
 /**
  * Set the listener for events from the persistent subscription.
@@ -189,6 +249,16 @@ int aeron_archive_persistent_subscription_context_set_state_counter(
     aeron_counter_t *counter);
 
 /**
+ * Get the counter for tracking the current state of the persistent subscription.
+ *
+ * @param context to query.
+ * @return the state counter.
+ * @see aeron_archive_persistent_subscription_context_set_state_counter
+ */
+aeron_counter_t *aeron_archive_persistent_subscription_context_get_state_counter(
+    aeron_archive_persistent_subscription_context_t *context);
+
+/**
  * Set the counter for tracking the join difference of the persistent subscription.
  * The join difference is the difference between the live position and the replay position when
  * transitioning. When not live, the value is INT64_MIN.
@@ -202,6 +272,16 @@ int aeron_archive_persistent_subscription_context_set_join_difference_counter(
     aeron_counter_t *counter);
 
 /**
+ * Get the counter for tracking the join difference of the persistent subscription.
+ *
+ * @param context to query.
+ * @return the join difference counter.
+ * @see aeron_archive_persistent_subscription_context_set_join_difference_counter
+ */
+aeron_counter_t *aeron_archive_persistent_subscription_context_get_join_difference_counter(
+    aeron_archive_persistent_subscription_context_t *context);
+
+/**
  * Set the counter for tracking the number of times the live stream has been left.
  *
  * @param context to configure.
@@ -213,6 +293,16 @@ int aeron_archive_persistent_subscription_context_set_live_left_counter(
     aeron_counter_t *counter);
 
 /**
+ * Get the counter for tracking the number of times the live stream has been left.
+ *
+ * @param context to query.
+ * @return the live left counter.
+ * @see aeron_archive_persistent_subscription_context_set_live_left_counter
+ */
+aeron_counter_t *aeron_archive_persistent_subscription_context_get_live_left_counter(
+    aeron_archive_persistent_subscription_context_t *context);
+
+/**
  * Set the counter for tracking the number of times live has been joined.
  *
  * @param context to configure.
@@ -222,6 +312,16 @@ int aeron_archive_persistent_subscription_context_set_live_left_counter(
 int aeron_archive_persistent_subscription_context_set_live_joined_counter(
     aeron_archive_persistent_subscription_context_t *context,
     aeron_counter_t *counter);
+
+/**
+ * Get the counter for tracking the number of times live has been joined.
+ *
+ * @param context to query.
+ * @return the live joined counter.
+ * @see aeron_archive_persistent_subscription_context_set_live_joined_counter
+ */
+aeron_counter_t *aeron_archive_persistent_subscription_context_get_live_joined_counter(
+    aeron_archive_persistent_subscription_context_t *context);
 
 /**
  * Create a persistent subscription.
