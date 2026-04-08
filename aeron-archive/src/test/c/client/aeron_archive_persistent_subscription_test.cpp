@@ -16,9 +16,7 @@
 
 #include <algorithm>
 #include <cinttypes>
-#include <climits>
 #include <random>
-#include <utility>
 
 #include "gtest/gtest.h"
 #include "gmock/gmock-matchers.h"
@@ -29,6 +27,7 @@
 extern "C"
 {
 #include "aeron_common.h"
+#include "aeron_counters.h"
 #include "client/aeron_archive.h"
 #include "client/aeron_archive_persistent_subscription.h"
 #include "client/aeron_archive_persistent_subscription_internal.h"
@@ -590,6 +589,122 @@ private:
     std::uniform_int_distribution<> m_lengthGenerator = std::uniform_int_distribution<>(0, 2048);
     std::uniform_int_distribution<uint8_t> m_byteGenerator = std::uniform_int_distribution<uint8_t>(0, UINT8_MAX);
 };
+
+// --- Counter auto-allocation ---
+
+TEST_F(AeronArchivePersistentSubscriptionTest, shouldAutoAllocateCounters)
+{
+    TestArchive archive = createArchive(m_aeronDir);
+
+    AeronResource aeron(m_aeronDir);
+
+    aeron_archive_context_t *archive_ctx = createArchiveContext();
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
+        aeron.aeron(),
+        archive_ctx,
+        123);
+
+    aeron_archive_persistent_subscription_t *persistent_subscription;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+    aeron_counters_reader_t *counters_reader = aeron_counters_reader(aeron.aeron());
+
+    int32_t state_counter_id = AERON_NULL_COUNTER_ID;
+    int32_t join_difference_counter_id = AERON_NULL_COUNTER_ID;
+    int32_t live_left_counter_id = AERON_NULL_COUNTER_ID;
+    int32_t live_joined_counter_id = AERON_NULL_COUNTER_ID;
+
+    int32_t *counter_id_ptrs[] = {
+        &state_counter_id, &join_difference_counter_id,
+        &live_left_counter_id, &live_joined_counter_id };
+
+    aeron_counters_reader_foreach_counter(
+        counters_reader,
+        [](int64_t value, int32_t id, int32_t type_id,
+           const uint8_t *, size_t, const char *, size_t, void *clientd)
+        {
+            int32_t **ptrs = static_cast<int32_t **>(clientd);
+            if (type_id == AERON_PERSISTENT_SUBSCRIPTION_STATE_TYPE_ID)
+                *ptrs[0] = id;
+            else if (type_id == AERON_PERSISTENT_SUBSCRIPTION_JOIN_DIFFERENCE_TYPE_ID)
+                *ptrs[1] = id;
+            else if (type_id == AERON_PERSISTENT_SUBSCRIPTION_LIVE_LEFT_COUNT_TYPE_ID)
+                *ptrs[2] = id;
+            else if (type_id == AERON_PERSISTENT_SUBSCRIPTION_LIVE_JOINED_COUNT_TYPE_ID)
+                *ptrs[3] = id;
+        },
+        counter_id_ptrs);
+
+    ASSERT_NE(AERON_NULL_COUNTER_ID, state_counter_id);
+    ASSERT_NE(AERON_NULL_COUNTER_ID, join_difference_counter_id);
+    ASSERT_NE(AERON_NULL_COUNTER_ID, live_left_counter_id);
+    ASSERT_NE(AERON_NULL_COUNTER_ID, live_joined_counter_id);
+
+    ASSERT_EQ(0, *aeron_counters_reader_addr(counters_reader, state_counter_id));
+    ASSERT_EQ(0, *aeron_counters_reader_addr(counters_reader, join_difference_counter_id));
+    ASSERT_EQ(0, *aeron_counters_reader_addr(counters_reader, live_joined_counter_id));
+    ASSERT_EQ(0, *aeron_counters_reader_addr(counters_reader, live_left_counter_id));
+
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
+    aeron_archive_context_close(archive_ctx);
+}
+
+TEST_F(AeronArchivePersistentSubscriptionTest, shouldUseUserProvidedCounters)
+{
+    TestArchive archive = createArchive(m_aeronDir);
+
+    AeronResource aeron(m_aeronDir);
+
+    // Create 4 user-provided counters
+    auto allocate_counter = [&](const char *label) -> aeron_counter_t *
+    {
+        aeron_async_add_counter_t *async = nullptr;
+        EXPECT_EQ(0, aeron_async_add_counter(
+            &async, aeron.aeron(), 999, nullptr, 0, label, strlen(label))) << aeron_errmsg();
+        aeron_counter_t *counter = nullptr;
+        while (nullptr == counter)
+        {
+            int result = aeron_async_add_counter_poll(&counter, async);
+            EXPECT_GE(result, 0) << aeron_errmsg();
+            if (0 == result) std::this_thread::yield();
+        }
+        return counter;
+    };
+
+    aeron_counter_t *state_counter = allocate_counter("test-state");
+    aeron_counter_t *join_difference_counter = allocate_counter("test-join-difference");
+    aeron_counter_t *live_left_counter = allocate_counter("test-to-replay");
+    aeron_counter_t *live_joined_counter = allocate_counter("test-to-live");
+
+    aeron_archive_context_t *archive_ctx = createArchiveContext();
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
+        aeron.aeron(),
+        archive_ctx,
+        123);
+
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_context_set_state_counter(context, state_counter));
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_context_set_join_difference_counter(context, join_difference_counter));
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_context_set_live_left_counter(context, live_left_counter));
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_context_set_live_joined_counter(context, live_joined_counter));
+
+    aeron_archive_persistent_subscription_t *persistent_subscription;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+    ASSERT_EQ(0, *aeron_counter_addr(state_counter));
+    ASSERT_EQ(0, *aeron_counter_addr(join_difference_counter));
+    ASSERT_EQ(0, *aeron_counter_addr(live_joined_counter));
+    ASSERT_EQ(0, *aeron_counter_addr(live_left_counter));
+
+    // Counters are closed by context_close (called from persistent_subscription_close)
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
+
+    ASSERT_TRUE(aeron_counter_is_closed(state_counter));
+    ASSERT_TRUE(aeron_counter_is_closed(join_difference_counter));
+    ASSERT_TRUE(aeron_counter_is_closed(live_left_counter));
+    ASSERT_TRUE(aeron_counter_is_closed(live_joined_counter));
+
+    aeron_archive_context_close(archive_ctx);
+}
 
 // Publishes 3 messages to a recording, then starts a persistent subscription.
 // Expects the subscription to first replay all 3 messages from the archive,
@@ -2170,7 +2285,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldHandleReplayBeingAheadOfLiv
         },
         [&] { return aeron_archive_persistent_subscription_is_live(persistent_subscription); });
 
-    ASSERT_EQ(-28 * 1024L, aeron_archive_persistent_subscription_join_error(persistent_subscription));
+    ASSERT_EQ(-28 * 1024L, aeron_archive_persistent_subscription_join_difference(persistent_subscription));
 
     aeron_subscription_close(slow_subscription, nullptr, nullptr);
 
