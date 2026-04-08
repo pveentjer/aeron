@@ -198,6 +198,24 @@ int aeron_archive_persistent_subscription_create(
 int aeron_archive_persistent_subscription_close(aeron_archive_persistent_subscription_t *persistent_subscription);
 
 /**
+ * Poll a persistent subscription for available messages.
+ * <p>
+ * Delivers assembled messages to the handler, so the handler shouldn't be a fragment assembler.
+ *
+ * @param persistent_subscription to poll.
+ * @param handler for handling read messages.
+ * @param clientd to pass to the handler.
+ * @param fragment_limit maximum number of message fragments to read when polling.
+ * @return positive number if fragments have been read or the persistent subscription has done other work,
+ * 0 if no fragments have been read and no work has been done, negative on error.
+ */
+int aeron_archive_persistent_subscription_poll(
+    aeron_archive_persistent_subscription_t *persistent_subscription,
+    aeron_fragment_handler_t handler,
+    void *clientd,
+    size_t fragment_limit);
+
+/**
  * Poll in a controlled manner a persistent subscription for available messages.
  * <p>
  * Delivers assembled messages to the handler, so the handler shouldn't be a fragment assembler.
