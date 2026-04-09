@@ -75,6 +75,13 @@ class PersistentSubscriptionContextTest
     }
 
     @Test
+    void contextMustHaveAnArchiveContext()
+    {
+        context.aeronArchiveContext(null);
+        assertThrows(ConfigurationException.class, context::conclude);
+    }
+
+    @Test
     void contextMustHaveRecordingId()
     {
         context.recordingId(Aeron.NULL_VALUE);
@@ -110,9 +117,16 @@ class PersistentSubscriptionContextTest
     }
 
     @Test
-    void contextMustHaveAnArchiveContext()
+    void contextThrowsIfStartPositionIsInvalid()
     {
-        context.aeronArchiveContext(null);
+        context.startPosition(-3);
+        assertThrows(ConfigurationException.class, context::conclude);
+    }
+
+    @Test
+    void contextThrowsIfRecordingIdIsInvalid()
+    {
+        context.recordingId(-2);
         assertThrows(ConfigurationException.class, context::conclude);
     }
 
@@ -133,20 +147,6 @@ class PersistentSubscriptionContextTest
     }
 
     @Test
-    void contextThrowsIfStartPositionIsInvalid()
-    {
-        context.startPosition(-3);
-        assertThrows(ConfigurationException.class, context::conclude);
-    }
-
-    @Test
-    void contextThrowsIfRecordingIdIsInvalid()
-    {
-        context.recordingId(-2);
-        assertThrows(ConfigurationException.class, context::conclude);
-    }
-
-    @Test
     void contextShouldCreateListenerIfNoneProvided()
     {
         final PersistentSubscriptionListener nullListener = null;
@@ -155,6 +155,50 @@ class PersistentSubscriptionContextTest
 
         assertNotSame(nullListener, context.listener());
         assertNotNull(context.listener());
+    }
+
+    @Test
+    void contextShouldCreateStateCounterIfNoneProvided()
+    {
+        final Counter nullStateCounter = null;
+        context.stateCounter(nullStateCounter);
+        context.conclude();
+
+        assertNotSame(nullStateCounter, context.stateCounter());
+        assertNotNull(context.stateCounter());
+    }
+
+    @Test
+    void contextShouldCreateJoinDifferenceCounterIfNoneProvided()
+    {
+        final Counter nullJoinDifferenceCounter = null;
+        context.stateCounter(nullJoinDifferenceCounter);
+        context.conclude();
+
+        assertNotSame(nullJoinDifferenceCounter, context.joinDifferenceCounter());
+        assertNotNull(context.joinDifferenceCounter());
+    }
+
+    @Test
+    void contextShouldCreateLiveLeftCounterIfNoneProvided()
+    {
+        final Counter nullLiveLeftCounter = null;
+        context.liveLeftCounter(nullLiveLeftCounter);
+        context.conclude();
+
+        assertNotSame(nullLiveLeftCounter, context.liveLeftCounter());
+        assertNotNull(context.liveLeftCounter());
+    }
+
+    @Test
+    void contextShouldCreateLiveJoinedCounterIfNoneProvided()
+    {
+        final Counter nullLiveJoinedCounter = null;
+        context.liveJoinedCounter(nullLiveJoinedCounter);
+        context.conclude();
+
+        assertNotSame(nullLiveJoinedCounter, context.liveJoinedCounter());
+        assertNotNull(context.liveJoinedCounter());
     }
 
     @ParameterizedTest
@@ -242,49 +286,5 @@ class PersistentSubscriptionContextTest
             arguments(true, "aeron:ipc?control-mode=response", "aeron:ipc", "aeron:ipc"),
             arguments(true, "aeron:ipc?control-mode=response", "aeron:ipc", "aeron:ipc?control-mode=response")
         );
-    }
-
-    @Test
-    void contextShouldCreateStateCounterIfNoneProvided()
-    {
-        final Counter nullStateCounter = null;
-        context.stateCounter(nullStateCounter);
-        context.conclude();
-
-        assertNotSame(nullStateCounter, context.stateCounter());
-        assertNotNull(context.stateCounter());
-    }
-
-    @Test
-    void contextShouldCreateJoinDifferenceCounterIfNoneProvided()
-    {
-        final Counter nullJoinDifferenceCounter = null;
-        context.stateCounter(nullJoinDifferenceCounter);
-        context.conclude();
-
-        assertNotSame(nullJoinDifferenceCounter, context.joinDifferenceCounter());
-        assertNotNull(context.joinDifferenceCounter());
-    }
-
-    @Test
-    void contextShouldCreateLiveLeftCounterIfNoneProvided()
-    {
-        final Counter nullLiveLeftCounter = null;
-        context.liveLeftCounter(nullLiveLeftCounter);
-        context.conclude();
-
-        assertNotSame(nullLiveLeftCounter, context.liveLeftCounter());
-        assertNotNull(context.liveLeftCounter());
-    }
-
-    @Test
-    void contextShouldCreateLiveJoinedCounterIfNoneProvided()
-    {
-        final Counter nullLiveJoinedCounter = null;
-        context.liveJoinedCounter(nullLiveJoinedCounter);
-        context.conclude();
-
-        assertNotSame(nullLiveJoinedCounter, context.liveJoinedCounter());
-        assertNotNull(context.liveJoinedCounter());
     }
 }
