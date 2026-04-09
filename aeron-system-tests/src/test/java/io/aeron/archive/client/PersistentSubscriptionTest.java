@@ -597,7 +597,7 @@ abstract class PersistentSubscriptionTest
             executeUntil(persistentSubscription::hasFailed, () -> poll(persistentSubscription, null, 1));
 
             assertEquals(1, listener.errorCount);
-            assertEquals(ArchiveException.class, listener.lastException.getClass());
+            assertEquals(PersistentSubscriptionException.class, listener.lastException.getClass());
         }
     }
 
@@ -622,7 +622,7 @@ abstract class PersistentSubscriptionTest
                 persistentSubscription::hasFailed,
                 () -> poll(persistentSubscription, fragmentHandler, 1));
             assertEquals(1, listener.errorCount);
-            assertEquals(ArchiveException.class, listener.lastException.getClass());
+            assertEquals(PersistentSubscriptionException.class, listener.lastException.getClass());
         }
     }
 
@@ -1466,7 +1466,7 @@ abstract class PersistentSubscriptionTest
 
             assertEquals(recordedMessages.size(), fragmentHandler.receivedPayloads.size());
             assertEquals(1, listener.errorCount);
-            assertEquals(ArchiveException.class, listener.lastException.getClass());
+            assertEquals(PersistentSubscriptionException.class, listener.lastException.getClass());
             assertThat(listener.lastException.getMessage(), containsString(
                 "ERROR - replay request failed")
             );
@@ -1748,10 +1748,15 @@ abstract class PersistentSubscriptionTest
                 persistentSubscription::hasFailed,
                 () -> poll(persistentSubscription, fragmentHandler, 10)
             );
-            assertEquals(ArchiveException.class, listener.lastException.getClass());
+            assertEquals(PersistentSubscriptionException.class, listener.lastException.getClass());
             assertThat(
                 listener.lastException.getMessage(),
-                containsString("must be less than highest recorded position")
+                containsString("ERROR - replay request failed: requested replay start position=")
+            );
+
+            assertThat(
+                listener.lastException.getMessage(),
+                containsString("must be less than the limit position=")
             );
         }
     }
@@ -1813,7 +1818,7 @@ abstract class PersistentSubscriptionTest
                 () -> poll(persistentSubscription, fragmentHandler, 10),
                 description(persistentSubscription, fragmentHandler, listener)
             );
-            assertEquals(ArchiveException.class, listener.lastException.getClass());
+            assertEquals(PersistentSubscriptionException.class, listener.lastException.getClass());
             assertThat(
                 listener.lastException.getMessage(),
                 containsString("unknown recording id:")
@@ -2146,7 +2151,7 @@ abstract class PersistentSubscriptionTest
             executeUntil(
                 () -> listener.errorCount > 0,
                 () -> poll(persistentSubscription, fragmentHandler, 1));
-            assertEquals(ArchiveException.class, listener.lastException.getClass());
+            assertEquals(PersistentSubscriptionException.class, listener.lastException.getClass());
             assertTrue(persistentSubscription.hasFailed());
         }
     }
