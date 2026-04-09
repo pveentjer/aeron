@@ -31,6 +31,10 @@ public class PersistentSubscriptionException extends RuntimeException
     public enum Reason
     {
         /**
+         * A generic reason in case no specific reason is available.
+         */
+        GENERIC,
+        /**
          * No recording exists with the specified recording id.
          */
         RECORDING_NOT_FOUND,

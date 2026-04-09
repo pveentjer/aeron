@@ -392,16 +392,16 @@ public final class PersistentSubscription implements AutoCloseable
                 {
                     return new PersistentSubscriptionException(
                         PersistentSubscriptionException.Reason.INVALID_START_POSITION,
-                        "Requested start position: " + position + " cannot be lower than recording start position: " +
-                        listRecordingRequest.startPosition + " for recording: " + recordingId);
+                        ArchiveException.buildReplayBeforeStartErrorMsg(
+                            recordingId, position,  listRecordingRequest.startPosition));
                 }
 
                 if (listRecordingRequest.stopPosition != NULL_POSITION && position >= listRecordingRequest.stopPosition)
                 {
                     return new PersistentSubscriptionException(
                         PersistentSubscriptionException.Reason.INVALID_START_POSITION,
-                        "Requested start position: " + position + " must be lower than highest recorded position: " +
-                        listRecordingRequest.stopPosition + " for recording: " + recordingId);
+                        ArchiveException.buildReplayExceedsLimitErrorMsg(
+                            recordingId, listRecordingRequest.stopPosition, position));
                 }
             }
             else if (position == FROM_START)
@@ -417,7 +417,7 @@ public final class PersistentSubscription implements AutoCloseable
 
             return new PersistentSubscriptionException(
                 PersistentSubscriptionException.Reason.RECORDING_NOT_FOUND,
-                "No recording found with ID: " + recordingId);
+                ArchiveException.buildUnknownRecordingErrorMsg(recordingId));
         }
 
         return null;
@@ -592,12 +592,19 @@ public final class PersistentSubscription implements AutoCloseable
 
             cleanUpRequestPublication();
             cleanUpReplaySubscription();
+            final int errorCode = (int) replayRequest.relevantId;
 
-            // TODO translate those to PersistentSubscriptionException whenever we can to make errors consistent?
-            listener.onError(new ArchiveException(
-                "replay request failed: " + replayRequest.errorMessage,
-                (int)replayRequest.relevantId,
-                replayRequest.correlationId));
+            final PersistentSubscriptionException.Reason reason = switch (errorCode)
+            {
+                case ArchiveException.INVALID_POSITION -> PersistentSubscriptionException.Reason.INVALID_START_POSITION;
+                case ArchiveException.UNKNOWN_RECORDING -> PersistentSubscriptionException.Reason.RECORDING_NOT_FOUND;
+                default -> PersistentSubscriptionException.Reason.GENERIC;
+            };
+
+            listener.onError(
+                new PersistentSubscriptionException(reason, "ERROR - replay request failed: " + replayRequest.errorMessage)
+            );
+
 
             return 1;
         }
