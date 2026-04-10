@@ -172,7 +172,7 @@ class PersistentSubscriptionContextTest
     void contextShouldCreateJoinDifferenceCounterIfNoneProvided()
     {
         final Counter nullJoinDifferenceCounter = null;
-        context.stateCounter(nullJoinDifferenceCounter);
+        context.joinDifferenceCounter(nullJoinDifferenceCounter);
         context.conclude();
 
         assertNotSame(nullJoinDifferenceCounter, context.joinDifferenceCounter());
