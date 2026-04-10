@@ -141,6 +141,16 @@ public final class PersistentSubscription implements AutoCloseable
         liveJoinedCounter = ctx.liveJoinedCounter;
 
         state = State.AWAIT_ARCHIVE_CONNECTION;
+
+        if (!stateCounter.isClosed())
+        {
+            stateCounter.setRelease(state.code);
+        }
+
+        if (!joinDifferenceCounter.isClosed())
+        {
+            joinDifferenceCounter.setRelease(joinDifference);
+        }
     }
 
     public static PersistentSubscription create(final Context ctx)
@@ -1473,8 +1483,8 @@ public final class PersistentSubscription implements AutoCloseable
         private AeronArchive.Context aeronArchiveContext = null;
         private Counter stateCounter = null;
         private Counter joinDifferenceCounter = null;
-        private Counter liveLeftCounter;
-        private Counter liveJoinedCounter;
+        private Counter liveLeftCounter = null;
+        private Counter liveJoinedCounter = null;
 
         /**
          * Perform a shallow copy of the object.
@@ -2193,20 +2203,9 @@ public final class PersistentSubscription implements AutoCloseable
         final String replayChannel,
         final String liveChannel)
     {
-        final ExpandableArrayBuffer tempBuffer = new ExpandableArrayBuffer();
+        final String label =
+          name + ": " + replayStreamId + " " + replayChannel + " " + liveStreamId + " " + liveChannel;
 
-        int index = 0;
-        final int keyLength = index;
-
-        index += tempBuffer.putStringWithoutLengthAscii(index, name + ": ");
-        index += tempBuffer.putIntAscii(index, replayStreamId);
-        index += tempBuffer.putStringWithoutLengthAscii(index, " ");
-        index += tempBuffer.putStringWithoutLengthAscii(index, replayChannel);
-        index += tempBuffer.putStringWithoutLengthAscii(index, " ");
-        index += tempBuffer.putIntAscii(index, liveStreamId);
-        index += tempBuffer.putStringWithoutLengthAscii(index, " ");
-        index += tempBuffer.putStringWithoutLengthAscii(index, liveChannel);
-
-        return aeron.addCounter(typeId, tempBuffer, 0, keyLength, tempBuffer, keyLength, index - keyLength);
+        return aeron.addCounter(typeId, label);
     }
 }
