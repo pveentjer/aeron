@@ -45,6 +45,7 @@
 struct aeron_archive_persistent_subscription_context_stct
 {
     aeron_t *aeron;
+    aeron_context_t *aeron_ctx;
     bool owns_aeron_client;
     char *aeron_directory_name;
     aeron_archive_context_t *archive_context;
@@ -241,6 +242,7 @@ int aeron_archive_persistent_subscription_context_close(aeron_archive_persistent
         if (context->owns_aeron_client)
         {
             aeron_close(context->aeron);
+            aeron_context_close(context->aeron_ctx);
         }
         aeron_free(context);
     }
@@ -548,6 +550,7 @@ int aeron_archive_persistent_subscription_context_conclude(aeron_archive_persist
             AERON_APPEND_ERR("%s", "Failed to start aeron");
             return -1;
         }
+        context->aeron_ctx = aeron_ctx;
         context->owns_aeron_client = true;
     }
 
