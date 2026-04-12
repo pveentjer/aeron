@@ -1909,6 +1909,90 @@ abstract class PersistentSubscriptionTest
     }
 
     @Test
+    @InterruptAfter(10)
+    void shouldRecoverFromArchiveRestartDuringReplay(final @TempDir Path tempDir)
+    {
+        final String remoteAeronDir = CommonContext.generateRandomDirName();
+
+        final MediaDriver.Context remoteDriverCtxTpl = driverCtxTpl.clone().aeronDirectoryName(remoteAeronDir);
+        final TestMediaDriver remoteMediaDriver =
+            addCloseable(TestMediaDriver.launch(remoteDriverCtxTpl.clone(), systemTestWatcher));
+        systemTestWatcher.dataCollector().add(remoteDriverCtxTpl.aeronDirectory());
+
+        final Aeron remoteAeron = addCloseable(Aeron.connect(aeronCtxTpl.clone().aeronDirectoryName(remoteAeronDir)));
+
+        final String archiveControlRequestChannel = "aeron:udp?endpoint=localhost:8011";
+        final File remoteArchiveDir = new File(tempDir.toString(), "remoteArchiveDir");
+
+        final Archive.Context remoteArchiveCtx = archiveCtxTpl.clone()
+            .archiveDir(remoteArchiveDir)
+            .aeronDirectoryName(remoteAeronDir)
+            .controlChannel(archiveControlRequestChannel)
+            .deleteArchiveOnStart(false);
+
+        final Archive remoteArchive = addCloseable(Archive.launch(remoteArchiveCtx.clone()));
+        systemTestWatcher.dataCollector().add(remoteArchiveCtx.archiveDir());
+
+        final AeronArchive.Context remoteAeronArchiveCtx = aeronArchiveCtxTpl.clone()
+            .controlRequestChannel(archiveControlRequestChannel)
+            .aeron(remoteAeron);
+
+        final AeronArchive remoteAeronArchive = addCloseable(AeronArchive.connect(remoteAeronArchiveCtx.clone()));
+
+        final ExclusivePublication exclusivePublication =
+            addCloseable(aeron.addExclusivePublication(MDC_PUBLICATION_CHANNEL, STREAM_ID));
+        remoteAeronArchive.startRecording(MDC_SUBSCRIPTION_CHANNEL, STREAM_ID, SourceLocation.REMOTE);
+        Tests.awaitConnected(exclusivePublication);
+
+        final PersistentPublication persistentPublication =
+            PersistentPublication.create(remoteAeronArchive, exclusivePublication);
+
+        // Publish enough messages so the PS will still be replaying when we kill the archive
+        final List<byte[]> messages = generateFixedPayloads(80, ONE_KB_MESSAGE_SIZE);
+        persistentPublication.persist(messages);
+
+        persistentSubscriptionCtx
+            .liveChannel(MDC_SUBSCRIPTION_CHANNEL)
+            .recordingId(persistentPublication.recordingId())
+            .aeronArchiveContext(remoteAeronArchiveCtx)
+            .startPosition(FROM_START);
+
+        try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
+        {
+            // Wait for a few messages to arrive — PS should still be replaying
+            executeUntil(
+                () -> fragmentHandler.hasReceivedPayloads(5),
+                () -> poll(persistentSubscription, fragmentHandler, 1));
+
+            assertTrue(persistentSubscription.isReplaying());
+
+            // Kill archive while PS is still replaying
+            remoteArchive.close();
+            remoteAeron.close();
+            remoteMediaDriver.close();
+
+            // PS should detect disconnection and leave replay without failing
+            executeUntil(
+                () -> !persistentSubscription.isReplaying(),
+                () -> poll(persistentSubscription, fragmentHandler, 1));
+
+            assertFalse(persistentSubscription.hasFailed());
+
+            // Restart archive with existing data
+            addCloseable(TestMediaDriver.launch(remoteDriverCtxTpl.clone(), systemTestWatcher));
+            addCloseable(Aeron.connect(aeronCtxTpl.clone().aeronDirectoryName(remoteAeronDir)));
+            addCloseable(Archive.launch(remoteArchiveCtx.clone()));
+
+            // PS should recover, replay remaining messages, and become live
+            executeUntil(
+                persistentSubscription::isLive,
+                () -> poll(persistentSubscription, fragmentHandler, 10));
+
+            assertPayloads(fragmentHandler.receivedPayloads, messages);
+        }
+    }
+
+    @Test
     @InterruptAfter(5)
     void shouldContinueConsumingFromLiveWhileArchiveIsUnavailable()
     {
