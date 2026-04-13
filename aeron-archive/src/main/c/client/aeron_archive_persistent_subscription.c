@@ -1130,10 +1130,17 @@ static bool validate_descriptor(aeron_archive_persistent_subscription_t *persist
 
             if (NULL != persistent_subscription->listener.on_error)
             {
+                char message[256];
+                snprintf(message, sizeof(message),
+                    "Requested live stream with ID: %d does not match stream ID: %d for recording: %ld",
+                    persistent_subscription->context->live_stream_id,
+                    req->stream_id,
+                    persistent_subscription->context->recording_id);
+
                 persistent_subscription->listener.on_error(
                     persistent_subscription->listener.clientd,
                     EINVAL,
-                    "Live stream id does not match stream id of recording");
+                    message);
             }
 
             return false;
@@ -1147,10 +1154,17 @@ static bool validate_descriptor(aeron_archive_persistent_subscription_t *persist
 
                 if (NULL != persistent_subscription->listener.on_error)
                 {
+                    char message[256];
+                    snprintf(message, sizeof(message),
+                        "requested replay start position=%ld is less than recording start position=%ld for recording %ld",
+                        persistent_subscription->position,
+                        req->start_position,
+                        persistent_subscription->context->recording_id);
+
                     persistent_subscription->listener.on_error(
                         persistent_subscription->listener.clientd,
                         EINVAL,
-                        "Requested started position is lower than start position of the recording");
+                        message);
                 }
 
                 return false;
@@ -1162,10 +1176,17 @@ static bool validate_descriptor(aeron_archive_persistent_subscription_t *persist
 
                 if (NULL != persistent_subscription->listener.on_error)
                 {
+                    char message[256];
+                    snprintf(message, sizeof(message),
+                        "requested replay start position=%ld must be less than the limit position=%ld for recording %ld",
+                        persistent_subscription->position,
+                        req->stop_position,
+                        persistent_subscription->context->recording_id);
+
                     persistent_subscription->listener.on_error(
                         persistent_subscription->listener.clientd,
                         EINVAL,
-                        "Requested start position must be lower than the highest recorded position for the recording");
+                        message);
                 }
 
                 return false;
@@ -1182,10 +1203,15 @@ static bool validate_descriptor(aeron_archive_persistent_subscription_t *persist
 
         if (NULL != persistent_subscription->listener.on_error)
         {
+            char message[64];
+            snprintf(message, sizeof(message),
+                "unknown recording id: %ld",
+                persistent_subscription->context->recording_id);
+
             persistent_subscription->listener.on_error(
                 persistent_subscription->listener.clientd,
                 EINVAL,
-                "No recording found with requested recording id");
+                message);
         }
 
         return false;
