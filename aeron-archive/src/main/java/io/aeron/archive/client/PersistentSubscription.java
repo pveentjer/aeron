@@ -58,7 +58,18 @@ import static io.aeron.archive.codecs.ControlResponseCode.RECORDING_UNKNOWN;
  */
 public final class PersistentSubscription implements AutoCloseable
 {
+    /**
+     * Special value for {@link Context#startPosition(long)} which will make a {@code PersistentSubscription} start by
+     * replaying the recording from its start position. Used when an application needs to process all historical and
+     * future messages.
+     */
     public static final long FROM_START = NULL_POSITION;
+
+    /**
+     * Special value for {@link Context#startPosition(long)} which will make a {@code PersistentSubscription} start by
+     * joining the live subscription. Used when an application needs to process all future messages from an unspecified
+     * join position, but does not need any historical ones.
+     */
     public static final long FROM_LIVE = -2;
 
     private final ImageControlledFragmentAssembler controlledFragmentAssembler = new ImageControlledFragmentAssembler(
@@ -152,11 +163,30 @@ public final class PersistentSubscription implements AutoCloseable
         }
     }
 
+    /**
+     * Creates a new {@code PersistentSubscription} using the given configuration. The returned instance must be polled
+     * to perform any work.
+     *
+     * @param ctx the configuration to use for the new {@code PersistentSubscription}.
+     * @return a new PersistentSubscription.
+     * @see #poll(FragmentHandler, int)
+     * @see #controlledPoll(ControlledFragmentHandler, int)
+     */
     public static PersistentSubscription create(final Context ctx)
     {
         return new PersistentSubscription(ctx);
     }
 
+    /**
+     * Poll for the next available message(s).
+     * <p>
+     * Either this method or {@link #controlledPoll(ControlledFragmentHandler, int)} must be called in a duty cycle for
+     * the {@code PersistentSubscription} to perform its work.
+     *
+     * @param fragmentHandler the handler to receive assembled messages if any are available.
+     * @param fragmentLimit the maximum number of fragments to be processed during the poll operation.
+     * @return positive number if work has been done, 0 otherwise.
+     */
     public int poll(final FragmentHandler fragmentHandler, final int fragmentLimit)
     {
         try
@@ -170,6 +200,16 @@ public final class PersistentSubscription implements AutoCloseable
         }
     }
 
+    /**
+     * Poll for the next available message(s).
+     * <p>
+     * Either this method or {@link #poll(FragmentHandler, int)} must be called in a duty cycle for the
+     * {@code PersistentSubscription} to perform its work.
+     *
+     * @param fragmentHandler the handler to receive assembled messages if any are available.
+     * @param fragmentLimit the maximum number of fragments to be processed during the poll operation.
+     * @return positive number if work has been done, 0 otherwise.
+     */
     public int controlledPoll(final ControlledFragmentHandler fragmentHandler, final int fragmentLimit)
     {
         try
@@ -208,7 +248,6 @@ public final class PersistentSubscription implements AutoCloseable
             case LIVE -> live(fragmentLimit, controlled);
             case FAILED -> 0;
         };
-
 
         return workCount;
     }
@@ -1452,6 +1491,9 @@ public final class PersistentSubscription implements AutoCloseable
         }
     }
 
+    /**
+     * Configuration of a {@code PersistentSubscription} to be created.
+     */
     public static class Context implements Cloneable
     {
         private static final VarHandle IS_CONCLUDED_VH;
@@ -1769,45 +1811,89 @@ public final class PersistentSubscription implements AutoCloseable
             return startPosition;
         }
 
+        /**
+         * Set the channel which will be used for subscribing to live data.
+         *
+         * @param liveChannel the channel which will be used for subscribing to live data.
+         * @return this for a fluent API.
+         */
         public Context liveChannel(final String liveChannel)
         {
             this.liveChannel = liveChannel;
             return this;
         }
 
+        /**
+         * Returns the channel which will be used for subscribing to live data.
+         *
+         * @return the channel which will be used for subscribing to live data.
+         */
         public String liveChannel()
         {
             return liveChannel;
         }
 
+        /**
+         * Set the stream id of the live data.
+         *
+         * @param liveStreamId the stream id of the live data.
+         * @return this for a fluent API.
+         */
         public Context liveStreamId(final int liveStreamId)
         {
             this.liveStreamId = liveStreamId;
             return this;
         }
 
+        /**
+         * Returns the stream id of the live data.
+         *
+         * @return the stream id of the live data.
+         */
         public int liveStreamId()
         {
             return liveStreamId;
         }
 
+        /**
+         * Set the channel which will be used for replays.
+         *
+         * @param replayChannel the channel which will be used for replays.
+         * @return this for a fluent API.
+         */
         public Context replayChannel(final String replayChannel)
         {
             this.replayChannel = replayChannel;
             return this;
         }
 
+        /**
+         * Returns the channel which will be used for replays.
+         *
+         * @return the channel which will be used for replays.
+         */
         public String replayChannel()
         {
             return replayChannel;
         }
 
+        /**
+         * Set the stream id which will be used for replays.
+         *
+         * @param replayStreamId the stream id which will be used for replays.
+         * @return this for a fluent API.
+         */
         public Context replayStreamId(final int replayStreamId)
         {
             this.replayStreamId = replayStreamId;
             return this;
         }
 
+        /**
+         * Returns the stream id which will be used for replays.
+         *
+         * @return the stream id which will be used for replays.
+         */
         public int replayStreamId()
         {
             return replayStreamId;
