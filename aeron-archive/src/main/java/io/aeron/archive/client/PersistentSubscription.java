@@ -1977,12 +1977,12 @@ public final class PersistentSubscription implements AutoCloseable
         }
 
         /**
-         * Set the counter for the {@code PersistentSubscription}'s join error.
+         * Set the counter for the {@code PersistentSubscription}'s join difference.
          * This represents the difference between the subscription's position in the replay and the position it joined
          * live.
          * When the subscription is not consuming from live, the value of this counter will be {@code Long.MIN_VALUE}.
          *
-         * @param joinDifferenceCounter the counter for the {@code PersistentSubscription}'s join error.
+         * @param joinDifferenceCounter the counter for the {@code PersistentSubscription}'s join difference.
          * @return this for a fluent API.
          */
         public Context joinDifferenceCounter(final Counter joinDifferenceCounter)
