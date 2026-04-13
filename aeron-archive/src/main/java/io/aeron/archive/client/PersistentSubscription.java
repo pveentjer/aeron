@@ -1308,7 +1308,7 @@ public final class PersistentSubscription implements AutoCloseable
         final String liveChannel,
         final int liveStreamId)
     {
-        System.out.println("State: " + oldState + " -> " + newState);
+//        System.out.println("State: " + oldState + " -> " + newState);
     }
 
     private void logJoinedLive(
