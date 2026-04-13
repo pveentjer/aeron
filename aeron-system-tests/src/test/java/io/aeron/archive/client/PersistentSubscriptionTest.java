@@ -1628,7 +1628,7 @@ abstract class PersistentSubscriptionTest
         persistentSubscriptionCtx
             .recordingId(persistentPublication.recordingId())
             .startPosition(FROM_LIVE)
-            .liveChannel(SPY_PREFIX +  MDC_PUBLICATION_CHANNEL + "|tether=false");
+            .liveChannel(SPY_PREFIX + MDC_PUBLICATION_CHANNEL + "|tether=false");
 
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
@@ -1671,7 +1671,8 @@ abstract class PersistentSubscriptionTest
                 assertEquals(1, listener.liveLeftCount);
 
                 executeUntil(
-                    () -> fragmentHandler.hasReceivedPayloads(firstMessageBatch.size()) && persistentSubscription.isLive(),
+                    () -> fragmentHandler.hasReceivedPayloads(firstMessageBatch.size()) &&
+                          persistentSubscription.isLive(),
                     () -> poll(persistentSubscription, fragmentHandler, 10));
 
                 assertPayloads(
