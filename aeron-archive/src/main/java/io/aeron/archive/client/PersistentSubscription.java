@@ -441,7 +441,7 @@ public final class PersistentSubscription implements AutoCloseable
                     return new PersistentSubscriptionException(
                         PersistentSubscriptionException.Reason.INVALID_START_POSITION,
                         ArchiveException.buildReplayBeforeStartErrorMsg(
-                            recordingId, position,  listRecordingRequest.startPosition));
+                            recordingId, position, listRecordingRequest.startPosition));
                 }
 
                 if (listRecordingRequest.stopPosition != NULL_POSITION && position >= listRecordingRequest.stopPosition)
@@ -449,7 +449,7 @@ public final class PersistentSubscription implements AutoCloseable
                     return new PersistentSubscriptionException(
                         PersistentSubscriptionException.Reason.INVALID_START_POSITION,
                         ArchiveException.buildReplayExceedsLimitErrorMsg(
-                            recordingId, listRecordingRequest.stopPosition, position));
+                            recordingId, position, listRecordingRequest.stopPosition));
                 }
             }
             else if (position == FROM_START)
@@ -640,7 +640,8 @@ public final class PersistentSubscription implements AutoCloseable
 
             cleanUpRequestPublication();
             cleanUpReplaySubscription();
-            final int errorCode = (int) replayRequest.relevantId;
+
+            final int errorCode = (int)replayRequest.relevantId;
 
             final PersistentSubscriptionException.Reason reason = switch (errorCode)
             {
@@ -649,10 +650,8 @@ public final class PersistentSubscription implements AutoCloseable
                 default -> PersistentSubscriptionException.Reason.GENERIC;
             };
 
-            listener.onError(
-                new PersistentSubscriptionException(reason, "ERROR - replay request failed: " + replayRequest.errorMessage)
-            );
-
+            listener.onError(new PersistentSubscriptionException(
+                reason, "ERROR - replay request failed: " + replayRequest.errorMessage));
 
             return 1;
         }
