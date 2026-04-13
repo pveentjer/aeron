@@ -23,6 +23,9 @@ public class PersistentSubscriptionException extends RuntimeException
 {
     private static final long serialVersionUID = -6953277621087533657L;
 
+    /**
+     * The reason of this exception.
+     */
     private final Reason reason;
 
     /**
