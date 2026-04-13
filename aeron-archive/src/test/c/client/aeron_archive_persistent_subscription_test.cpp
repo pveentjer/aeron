@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cinttypes>
 #include <random>
+#include <climits>
 
 #include "gtest/gtest.h"
 #include "gmock/gmock-matchers.h"
