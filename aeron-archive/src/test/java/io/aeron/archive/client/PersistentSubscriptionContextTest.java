@@ -19,7 +19,8 @@ import io.aeron.Aeron;
 import io.aeron.Counter;
 import io.aeron.exceptions.ConcurrentConcludeException;
 import io.aeron.exceptions.ConfigurationException;
-
+import io.aeron.test.CountersAnswer;
+import io.aeron.test.Tests;
 import org.agrona.concurrent.status.CountersManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,8 +28,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
-import io.aeron.test.CountersAnswer;
-import io.aeron.test.Tests;
 import java.util.stream.Stream;
 
 import static io.aeron.CommonContext.IPC_CHANNEL;
@@ -38,8 +37,8 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -53,8 +52,7 @@ class PersistentSubscriptionContextTest
         final Aeron aeron = mock(Aeron.class);
         final CountersManager countersManager = Tests.newCountersManager(64 * 1024);
 
-        when(aeron.addCounter(anyInt(), any(), anyInt(), anyInt(), any(), anyInt(), anyInt()))
-            .then(CountersAnswer.mapTo(countersManager));
+        when(aeron.addCounter(anyInt(), anyString())).then(CountersAnswer.mapTo(countersManager));
 
         context = new PersistentSubscription.Context()
             .recordingId(1)
