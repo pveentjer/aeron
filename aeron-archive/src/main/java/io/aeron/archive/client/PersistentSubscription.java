@@ -2289,7 +2289,7 @@ public final class PersistentSubscription implements AutoCloseable
         final String liveChannel)
     {
         final String label =
-          name + ": " + replayStreamId + " " + replayChannel + " " + liveStreamId + " " + liveChannel;
+            name + ": " + replayStreamId + " " + replayChannel + " " + liveStreamId + " " + liveChannel;
 
         return aeron.addCounter(typeId, label);
     }
