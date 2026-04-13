@@ -16,7 +16,6 @@
 package io.aeron.archive.client;
 
 import io.aeron.Aeron;
-import io.aeron.Counter;
 import io.aeron.exceptions.ConcurrentConcludeException;
 import io.aeron.exceptions.ConfigurationException;
 import io.aeron.test.CountersAnswer;
@@ -147,55 +146,45 @@ class PersistentSubscriptionContextTest
     @Test
     void contextShouldCreateListenerIfNoneProvided()
     {
-        final PersistentSubscriptionListener nullListener = null;
-        context.listener(nullListener);
+        context.listener(null);
         context.conclude();
 
-        assertNotSame(nullListener, context.listener());
         assertNotNull(context.listener());
     }
 
     @Test
     void contextShouldCreateStateCounterIfNoneProvided()
     {
-        final Counter nullStateCounter = null;
-        context.stateCounter(nullStateCounter);
+        context.stateCounter(null);
         context.conclude();
 
-        assertNotSame(nullStateCounter, context.stateCounter());
         assertNotNull(context.stateCounter());
     }
 
     @Test
     void contextShouldCreateJoinDifferenceCounterIfNoneProvided()
     {
-        final Counter nullJoinDifferenceCounter = null;
-        context.joinDifferenceCounter(nullJoinDifferenceCounter);
+        context.joinDifferenceCounter(null);
         context.conclude();
 
-        assertNotSame(nullJoinDifferenceCounter, context.joinDifferenceCounter());
         assertNotNull(context.joinDifferenceCounter());
     }
 
     @Test
     void contextShouldCreateLiveLeftCounterIfNoneProvided()
     {
-        final Counter nullLiveLeftCounter = null;
-        context.liveLeftCounter(nullLiveLeftCounter);
+        context.liveLeftCounter(null);
         context.conclude();
 
-        assertNotSame(nullLiveLeftCounter, context.liveLeftCounter());
         assertNotNull(context.liveLeftCounter());
     }
 
     @Test
     void contextShouldCreateLiveJoinedCounterIfNoneProvided()
     {
-        final Counter nullLiveJoinedCounter = null;
-        context.liveJoinedCounter(nullLiveJoinedCounter);
+        context.liveJoinedCounter(null);
         context.conclude();
 
-        assertNotSame(nullLiveJoinedCounter, context.liveJoinedCounter());
         assertNotNull(context.liveJoinedCounter());
     }
 
