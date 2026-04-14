@@ -693,7 +693,7 @@ static bool max_recorded_position_recheck_required(
     return false;
 }
 
-static bool max_recorded_position_caught_up(
+static bool max_recorded_position_is_caught_up(
     aeron_archive_persistent_subscription_t *persistent_subscription,
     int64_t replayed_position)
 {
@@ -1820,7 +1820,7 @@ static int replay(
 
     if (NULL == persistent_subscription->add_live_subscription &&
         NULL == persistent_subscription->live_subscription &&
-        max_recorded_position_caught_up(persistent_subscription, persistent_subscription->position))
+        max_recorded_position_is_caught_up(persistent_subscription, persistent_subscription->position))
     {
         if (!do_add_live_subscription(persistent_subscription))
         {
