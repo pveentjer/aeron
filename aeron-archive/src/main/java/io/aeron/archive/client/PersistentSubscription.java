@@ -936,6 +936,7 @@ public final class PersistentSubscription implements AutoCloseable
 
         if (replayImage.isClosed())
         {
+            position = replayImage.position();
             cleanUpLiveSubscription();
             cleanUpReplay();
             cleanUpReplaySubscription();
