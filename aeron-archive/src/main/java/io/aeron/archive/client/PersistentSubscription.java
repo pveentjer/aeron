@@ -2216,6 +2216,12 @@ public final class PersistentSubscription implements AutoCloseable
                 return;
             }
 
+            final Image replayImage = PersistentSubscription.this.replayImage;
+            if (replayImage != null)
+            {
+                position = replayImage.position();
+            }
+
             cleanUpRequestPublication();
             cleanUpLiveSubscription();
             cleanUpReplay();

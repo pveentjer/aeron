@@ -821,6 +821,12 @@ static void on_archive_disconnected(void *clientd)
         return;
     }
 
+    aeron_image_t *replay_image = persistent_subscription->replay_image;
+    if (replay_image != NULL)
+    {
+        persistent_subscription->position = aeron_image_position(replay_image);
+    }
+
     clean_up_live_subscription(persistent_subscription);
     clean_up_request_publication(persistent_subscription);
     clean_up_replay(persistent_subscription);
