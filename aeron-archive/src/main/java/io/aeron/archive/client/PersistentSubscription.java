@@ -900,7 +900,6 @@ public final class PersistentSubscription implements AutoCloseable
             cleanUpRequestPublication();
             cleanUpReplaySubscription();
 
-            // TODO translate those to PersistentSubscriptionException whenever we can to make errors consistent?
             listener.onError(new ArchiveException(
                 "replay token request failed: " + replayTokenRequest.errorMessage,
                 (int)replayTokenRequest.relevantId,
