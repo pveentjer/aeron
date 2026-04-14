@@ -1005,7 +1005,7 @@ public final class PersistentSubscription implements AutoCloseable
 
         if (liveSubscriptionId == Aeron.NULL_VALUE &&
             liveSubscription == null &&
-            maxRecordedPosition.caughtUp(position))
+            maxRecordedPosition.isCaughtUp(position))
         {
             doAddLiveSubscription();
         }
@@ -2109,8 +2109,7 @@ public final class PersistentSubscription implements AutoCloseable
             this.state = MaxRecordedPositionState.REQUEST_MAX_POSITION;
         }
 
-        // TODO Martin: add is/has prefix, and maybe rename to something more meaningful
-        public boolean caughtUp(final long replayedPosition)
+        public boolean isCaughtUp(final long replayedPosition)
         {
             return switch (state)
             {
