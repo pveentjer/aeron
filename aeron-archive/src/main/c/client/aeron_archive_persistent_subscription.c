@@ -1749,6 +1749,7 @@ static int replay(
 
     if (aeron_image_is_closed(image))
     {
+        persistent_subscription->position = aeron_image_position(image);
         clean_up_live_subscription(persistent_subscription);
         clean_up_replay(persistent_subscription);
         clean_up_replay_subscription(persistent_subscription);
