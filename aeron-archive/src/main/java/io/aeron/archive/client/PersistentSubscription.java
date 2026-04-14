@@ -101,6 +101,10 @@ public final class PersistentSubscription implements AutoCloseable
     private final NanoClock nanoClock;
     private final AsyncAeronArchive asyncAeronArchive;
     private final long messageTimeoutNs;
+    private final Counter stateCounter;
+    private final Counter joinDifferenceCounter;
+    private final Counter liveLeftCounter;
+    private final Counter liveJoinedCounter;
 
     private State state;
     private long replaySessionId = Aeron.NULL_VALUE;
@@ -122,10 +126,6 @@ public final class PersistentSubscription implements AutoCloseable
     private long joinDifference = Long.MIN_VALUE;
     private long nextLivePosition = Aeron.NULL_VALUE;
     private long position;
-    private final Counter stateCounter;
-    private final Counter joinDifferenceCounter;
-    private final Counter liveLeftCounter;
-    private final Counter liveJoinedCounter;
 
     private PersistentSubscription(final Context ctx)
     {
@@ -144,11 +144,11 @@ public final class PersistentSubscription implements AutoCloseable
         nanoClock = aeron.context().nanoClock();
         asyncAeronArchive = new AsyncAeronArchive(ctx.aeronArchiveContext().aeron(aeron), new ArchiveListener());
         messageTimeoutNs = ctx.aeronArchiveContext().messageTimeoutNs();
-        position = ctx.startPosition;
         stateCounter = ctx.stateCounter;
         joinDifferenceCounter = ctx.joinDifferenceCounter;
         liveLeftCounter = ctx.liveLeftCounter;
         liveJoinedCounter = ctx.liveJoinedCounter;
+        position = ctx.startPosition;
 
         state = State.AWAIT_ARCHIVE_CONNECTION;
 
