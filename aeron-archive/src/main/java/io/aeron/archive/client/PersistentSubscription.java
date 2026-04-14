@@ -54,7 +54,20 @@ import static io.aeron.archive.codecs.ControlResponseCode.OK;
 import static io.aeron.archive.codecs.ControlResponseCode.RECORDING_UNKNOWN;
 
 /**
- *
+ * A {@code PersistentSubscription} allows to consume messages of a live publication which is also being recorded to
+ * an Archive, in order and without gaps, independently of when messages were published. It tries to read messages from
+ * the live subscription as much as possible, falling back to an Archive replay when necessary, making any source
+ * switches transparent to the application.
+ * <p>
+ * It offers:
+ * <ul>
+ *     <li>late join - if any messages have been published after the provided start position, they will be replayed from
+ *     the recording before switching to the live subscription,</li>
+ *     <li>seamless recovery - if a subscription gets disconnected due to flow control or a network issue, it will
+ *     automatically recover and replay any missed messages.</li>
+ * </ul>
+ * <p>
+ * Not thread-safe. Must be polled in a duty cycle. Performs message reassembly.
  */
 public final class PersistentSubscription implements AutoCloseable
 {
