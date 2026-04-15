@@ -16,7 +16,7 @@
 
 #include "gtest/gtest.h"
 #include <gmock/gmock-matchers.h>
-#include "../TestArchive.h"
+#include "TestArchive.h"
 #include "ArchiveClientTestUtils.h"
 
 extern "C"

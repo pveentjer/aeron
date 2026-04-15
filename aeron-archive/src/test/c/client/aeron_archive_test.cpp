@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#include <thread>
+
 #include "gtest/gtest.h"
 #include <gmock/gmock-matchers.h>
 
@@ -33,7 +35,7 @@ extern "C"
 #include "util/aeron_env.h"
 }
 
-#include "../TestArchive.h"
+#include "TestArchive.h"
 #include "aeron_archive_client/controlResponse.h"
 
 testing::AssertionResult EqualOrErrmsg(const int x, const int y)

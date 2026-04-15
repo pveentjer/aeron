@@ -371,8 +371,8 @@ if (BUILD_AERON_ARCHIVE_API)
         DEPENDS ${AERON_ALL_JAR})
 
     if (AERON_TESTS)
-        add_subdirectory(${AERON_ARCHIVE_WRAPPER_TEST_PATH})
         add_subdirectory(${AERON_C_ARCHIVE_TEST_PATH})
+        add_subdirectory(${AERON_ARCHIVE_WRAPPER_TEST_PATH})
     endif ()
 endif (BUILD_AERON_ARCHIVE_API)
 ##########################################################

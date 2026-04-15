@@ -17,8 +17,9 @@
 #ifndef AERON_ARCHIVECLIENTTESTUTILS_H
 #define AERON_ARCHIVECLIENTTESTUTILS_H
 
+#include <stdexcept>
 #include <string>
-#include "../EmbeddedMediaDriver.h"
+#include "EmbeddedMediaDriver.h"
 
 extern "C"
 {
@@ -34,7 +35,7 @@ public:
     {
         char path[AERON_MAX_PATH];
         aeron_default_path(path, sizeof(path));
-        const auto aeronDir = std::string(path) + "-" + std::to_string(aeron_randomised_int32());
+        const std::string aeronDir = std::string(path) + "-" + std::to_string(aeron_randomised_int32());
         m_driver.aeronDir(aeronDir);
         m_driver.start();
     }
@@ -58,16 +59,25 @@ class AeronResource
 public:
     explicit AeronResource(const std::string& aeronDir)
     {
-        aeron_context_t *aeron_ctx;
-        aeron_context_init(&aeron_ctx);
-        aeron_context_set_dir(aeron_ctx, aeronDir.c_str());
-        aeron_init(&m_aeron, aeron_ctx);
-        aeron_start(m_aeron);
+        if (aeron_context_init(&m_aeron_ctx) < 0)
+        {
+            throw std::runtime_error("aeron_context_init failed: " + std::string(aeron_errmsg()));
+        }
+        aeron_context_set_dir(m_aeron_ctx, aeronDir.c_str());
+        if (aeron_init(&m_aeron, m_aeron_ctx) < 0)
+        {
+            throw std::runtime_error("aeron_init failed: " + std::string(aeron_errmsg()));
+        }
+        if (aeron_start(m_aeron) < 0)
+        {
+            throw std::runtime_error("aeron_start failed: " + std::string(aeron_errmsg()));
+        }
     }
 
     ~AeronResource()
     {
         aeron_close(m_aeron);
+        aeron_context_close(m_aeron_ctx);
     }
 
     aeron_t* aeron() const
@@ -76,6 +86,7 @@ public:
     }
 
 private:
+    aeron_context_t *m_aeron_ctx = nullptr;
     aeron_t *m_aeron = nullptr;
 };
 
@@ -84,16 +95,8 @@ class Credentials
 public:
     explicit Credentials(std::string credentials) :
         m_credentials(std::move(credentials)),
-        m_encodedCredentials(new aeron_archive_encoded_credentials_t {
-            m_credentials.c_str(),
-            static_cast<uint32_t>(m_credentials.length())
-        })
+        m_encodedCredentials{m_credentials.c_str(), static_cast<uint32_t>(m_credentials.length())}
     {
-    }
-
-    ~Credentials()
-    {
-        delete m_encodedCredentials;
     }
 
     static Credentials& defaultCredentials()
@@ -109,12 +112,12 @@ public:
 
 private:
     std::string m_credentials;
-    aeron_archive_encoded_credentials_t *m_encodedCredentials;
+    aeron_archive_encoded_credentials_t m_encodedCredentials;
 
     static aeron_archive_encoded_credentials_t *supplier(void *clientd)
     {
-        const auto receiver = static_cast<Credentials*>(clientd);
-        return receiver->m_encodedCredentials;
+        Credentials *receiver = static_cast<Credentials*>(clientd);
+        return &receiver->m_encodedCredentials;
     }
 };
 

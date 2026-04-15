@@ -14,11 +14,13 @@
  * limitations under the License.
  */
 
-#include "ArchiveClientTestUtils.h"
 #include "gtest/gtest.h"
+#include "ArchiveClientTestUtils.h"
+#include "TestArchive.h"
 
 extern "C"
 {
+#include "client/aeron_archive_persistent_subscription.h"
 #include "client/aeron_archive_persistent_subscription_internal.h"
 }
 
@@ -26,8 +28,183 @@ class AeronArchivePersistentSubscriptionContextTest : public testing::Test
 {
 };
 
+TEST_F(AeronArchivePersistentSubscriptionContextTest, shouldFailIfArchiveContextNotSet)
+{
+    aeron_archive_persistent_subscription_context_t *context;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_context_init(&context)) << aeron_errmsg();
+    aeron_archive_persistent_subscription_context_set_recording_id(context, 0);
+    aeron_archive_persistent_subscription_context_set_live_channel(context, "aeron:ipc");
+    aeron_archive_persistent_subscription_context_set_live_stream_id(context, 1000);
+    aeron_archive_persistent_subscription_context_set_replay_channel(context, "aeron:udp?endpoint=localhost:0");
+    aeron_archive_persistent_subscription_context_set_replay_stream_id(context, -5);
+
+    ASSERT_EQ(-1, aeron_archive_persistent_subscription_context_conclude(context));
+
+    aeron_archive_persistent_subscription_context_close(context);
+}
+
+TEST_F(AeronArchivePersistentSubscriptionContextTest, shouldFailIfRecordingIdNotSet)
+{
+    aeron_archive_context_t *archive_ctx;
+    ASSERT_EQ(0, aeron_archive_context_init(&archive_ctx)) << aeron_errmsg();
+
+    aeron_archive_persistent_subscription_context_t *context;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_context_init(&context)) << aeron_errmsg();
+    aeron_archive_persistent_subscription_context_set_archive_context(context, archive_ctx);
+    // recording_id deliberately not set
+    aeron_archive_persistent_subscription_context_set_live_channel(context, "aeron:ipc");
+    aeron_archive_persistent_subscription_context_set_live_stream_id(context, 1000);
+    aeron_archive_persistent_subscription_context_set_replay_channel(context, "aeron:udp?endpoint=localhost:0");
+    aeron_archive_persistent_subscription_context_set_replay_stream_id(context, -5);
+
+    ASSERT_EQ(-1, aeron_archive_persistent_subscription_context_conclude(context));
+
+    aeron_archive_persistent_subscription_context_close(context);
+    aeron_archive_context_close(archive_ctx);
+}
+
+TEST_F(AeronArchivePersistentSubscriptionContextTest, shouldFailIfLiveChannelNotSet)
+{
+    aeron_archive_context_t *archive_ctx;
+    ASSERT_EQ(0, aeron_archive_context_init(&archive_ctx)) << aeron_errmsg();
+
+    aeron_archive_persistent_subscription_context_t *context;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_context_init(&context)) << aeron_errmsg();
+    aeron_archive_persistent_subscription_context_set_archive_context(context, archive_ctx);
+    aeron_archive_persistent_subscription_context_set_recording_id(context, 0);
+    // live_channel deliberately not set
+    aeron_archive_persistent_subscription_context_set_live_stream_id(context, 1000);
+    aeron_archive_persistent_subscription_context_set_replay_channel(context, "aeron:udp?endpoint=localhost:0");
+    aeron_archive_persistent_subscription_context_set_replay_stream_id(context, -5);
+
+    ASSERT_EQ(-1, aeron_archive_persistent_subscription_context_conclude(context));
+
+    aeron_archive_persistent_subscription_context_close(context);
+    aeron_archive_context_close(archive_ctx);
+}
+
+TEST_F(AeronArchivePersistentSubscriptionContextTest, shouldFailIfLiveStreamIdNotSet)
+{
+    aeron_archive_context_t *archive_ctx;
+    ASSERT_EQ(0, aeron_archive_context_init(&archive_ctx)) << aeron_errmsg();
+
+    aeron_archive_persistent_subscription_context_t *context;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_context_init(&context)) << aeron_errmsg();
+    aeron_archive_persistent_subscription_context_set_archive_context(context, archive_ctx);
+    aeron_archive_persistent_subscription_context_set_recording_id(context, 0);
+    aeron_archive_persistent_subscription_context_set_live_channel(context, "aeron:ipc");
+    // live_stream_id deliberately not set
+    aeron_archive_persistent_subscription_context_set_replay_channel(context, "aeron:udp?endpoint=localhost:0");
+    aeron_archive_persistent_subscription_context_set_replay_stream_id(context, -5);
+
+    ASSERT_EQ(-1, aeron_archive_persistent_subscription_context_conclude(context));
+
+    aeron_archive_persistent_subscription_context_close(context);
+    aeron_archive_context_close(archive_ctx);
+}
+
+TEST_F(AeronArchivePersistentSubscriptionContextTest, shouldFailIfReplayChannelNotSet)
+{
+    aeron_archive_context_t *archive_ctx;
+    ASSERT_EQ(0, aeron_archive_context_init(&archive_ctx)) << aeron_errmsg();
+
+    aeron_archive_persistent_subscription_context_t *context;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_context_init(&context)) << aeron_errmsg();
+    aeron_archive_persistent_subscription_context_set_archive_context(context, archive_ctx);
+    aeron_archive_persistent_subscription_context_set_recording_id(context, 0);
+    aeron_archive_persistent_subscription_context_set_live_channel(context, "aeron:ipc");
+    aeron_archive_persistent_subscription_context_set_live_stream_id(context, 1000);
+    // replay_channel deliberately not set
+    aeron_archive_persistent_subscription_context_set_replay_stream_id(context, -5);
+
+    ASSERT_EQ(-1, aeron_archive_persistent_subscription_context_conclude(context));
+
+    aeron_archive_persistent_subscription_context_close(context);
+    aeron_archive_context_close(archive_ctx);
+}
+
+TEST_F(AeronArchivePersistentSubscriptionContextTest, shouldFailIfReplayStreamIdNotSet)
+{
+    aeron_archive_context_t *archive_ctx;
+    ASSERT_EQ(0, aeron_archive_context_init(&archive_ctx)) << aeron_errmsg();
+
+    aeron_archive_persistent_subscription_context_t *context;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_context_init(&context)) << aeron_errmsg();
+    aeron_archive_persistent_subscription_context_set_archive_context(context, archive_ctx);
+    aeron_archive_persistent_subscription_context_set_recording_id(context, 0);
+    aeron_archive_persistent_subscription_context_set_live_channel(context, "aeron:ipc");
+    aeron_archive_persistent_subscription_context_set_live_stream_id(context, 1000);
+    aeron_archive_persistent_subscription_context_set_replay_channel(context, "aeron:udp?endpoint=localhost:0");
+    // replay_stream_id deliberately not set
+
+    ASSERT_EQ(-1, aeron_archive_persistent_subscription_context_conclude(context));
+
+    aeron_archive_persistent_subscription_context_close(context);
+    aeron_archive_context_close(archive_ctx);
+}
+
+TEST_F(AeronArchivePersistentSubscriptionContextTest, shouldFailIfStartPositionIsInvalid)
+{
+    aeron_archive_context_t *archive_ctx;
+    ASSERT_EQ(0, aeron_archive_context_init(&archive_ctx)) << aeron_errmsg();
+
+    aeron_archive_persistent_subscription_context_t *context;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_context_init(&context)) << aeron_errmsg();
+    aeron_archive_persistent_subscription_context_set_archive_context(context, archive_ctx);
+    aeron_archive_persistent_subscription_context_set_recording_id(context, 0);
+    aeron_archive_persistent_subscription_context_set_live_channel(context, "aeron:ipc");
+    aeron_archive_persistent_subscription_context_set_live_stream_id(context, 1000);
+    aeron_archive_persistent_subscription_context_set_replay_channel(context, "aeron:udp?endpoint=localhost:0");
+    aeron_archive_persistent_subscription_context_set_replay_stream_id(context, -5);
+    aeron_archive_persistent_subscription_context_set_start_position(context, -3); // invalid
+
+    ASSERT_EQ(-1, aeron_archive_persistent_subscription_context_conclude(context));
+
+    aeron_archive_persistent_subscription_context_close(context);
+    aeron_archive_context_close(archive_ctx);
+}
+
+TEST_F(AeronArchivePersistentSubscriptionContextTest, shouldFailIfRecordingIdIsInvalid)
+{
+    aeron_archive_context_t *archive_ctx;
+    ASSERT_EQ(0, aeron_archive_context_init(&archive_ctx)) << aeron_errmsg();
+
+    aeron_archive_persistent_subscription_context_t *context;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_context_init(&context)) << aeron_errmsg();
+    aeron_archive_persistent_subscription_context_set_archive_context(context, archive_ctx);
+    aeron_archive_persistent_subscription_context_set_recording_id(context, -5); // invalid negative
+    aeron_archive_persistent_subscription_context_set_live_channel(context, "aeron:ipc");
+    aeron_archive_persistent_subscription_context_set_live_stream_id(context, 1000);
+    aeron_archive_persistent_subscription_context_set_replay_channel(context, "aeron:udp?endpoint=localhost:0");
+    aeron_archive_persistent_subscription_context_set_replay_stream_id(context, -5);
+
+    ASSERT_EQ(-1, aeron_archive_persistent_subscription_context_conclude(context));
+
+    aeron_archive_persistent_subscription_context_close(context);
+    aeron_archive_context_close(archive_ctx);
+}
+
+TEST_F(AeronArchivePersistentSubscriptionContextTest, shouldRejectNullListener)
+{
+    aeron_archive_persistent_subscription_context_t *context;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_context_init(&context)) << aeron_errmsg();
+
+    ASSERT_EQ(-1, aeron_archive_persistent_subscription_context_set_listener(context, nullptr));
+
+    aeron_archive_persistent_subscription_context_close(context);
+}
+
 TEST_F(AeronArchivePersistentSubscriptionContextTest, testValidContextWithExternalAeron)
 {
+    DriverResource driver;
+
+    aeron_t *aeron = nullptr;
+    aeron_context_t *aeron_ctx = nullptr;
+    ASSERT_EQ(0, aeron_context_init(&aeron_ctx)) << aeron_errmsg();
+    aeron_context_set_dir(aeron_ctx, driver.aeronDir().c_str());
+    ASSERT_EQ(0, aeron_init(&aeron, aeron_ctx)) << aeron_errmsg();
+    ASSERT_EQ(0, aeron_start(aeron)) << aeron_errmsg();
+
     aeron_archive_context_t *archive_context;
     ASSERT_EQ(0, aeron_archive_context_init(&archive_context)) << aeron_errmsg();
 
@@ -39,11 +216,13 @@ TEST_F(AeronArchivePersistentSubscriptionContextTest, testValidContextWithExtern
     EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_live_stream_id(context, 1000)) << aeron_errmsg();
     EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_replay_channel(context, "aeron:ipc")) << aeron_errmsg();
     EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_replay_stream_id(context, 2000)) << aeron_errmsg();
-    EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_aeron(context, reinterpret_cast<aeron_t*>(8))) << aeron_errmsg();
+    EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_aeron(context, aeron)) << aeron_errmsg();
     EXPECT_EQ(0, aeron_archive_persistent_subscription_context_conclude(context)) << aeron_errmsg();
     EXPECT_EQ(0, aeron_archive_persistent_subscription_context_close(context)) << aeron_errmsg();
 
     EXPECT_EQ(0, aeron_archive_context_close(archive_context)) << aeron_errmsg();
+    aeron_close(aeron);
+    aeron_context_close(aeron_ctx);
 }
 
 TEST_F(AeronArchivePersistentSubscriptionContextTest, testValidContextWithOwnedAeron)
@@ -79,11 +258,14 @@ struct ReplayAndControlChannels
 class ReplayAndControlChannelsTest : public AeronArchivePersistentSubscriptionContextTest,
                                      public testing::WithParamInterface<ReplayAndControlChannels>
 {
+protected:
+    DriverResource driver;
+    AeronResource aeron{driver.aeronDir()};
 };
 
 TEST_P(ReplayAndControlChannelsTest, replayAndControlChannelMediaTypesMustMatchWhenUsingResponseChannels)
 {
-    const auto& param = GetParam();
+    const ReplayAndControlChannels& param = GetParam();
 
     aeron_archive_context_t *archive_context;
     ASSERT_EQ(0, aeron_archive_context_init(&archive_context)) << aeron_errmsg();
@@ -98,7 +280,7 @@ TEST_P(ReplayAndControlChannelsTest, replayAndControlChannelMediaTypesMustMatchW
     EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_live_stream_id(context, 1000)) << aeron_errmsg();
     EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_replay_channel(context, param.replayChannel)) << aeron_errmsg();
     EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_replay_stream_id(context, 2000)) << aeron_errmsg();
-    EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_aeron(context, reinterpret_cast<aeron_t*>(8))) << aeron_errmsg();
+    EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_aeron(context, aeron.aeron())) << aeron_errmsg();
     EXPECT_EQ(param.expectedConcludeResult, aeron_archive_persistent_subscription_context_conclude(context)) << aeron_errmsg();
     EXPECT_EQ(0, aeron_archive_persistent_subscription_context_close(context)) << aeron_errmsg();
 
