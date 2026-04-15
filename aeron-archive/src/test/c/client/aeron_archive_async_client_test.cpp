@@ -50,18 +50,23 @@ class AeronArchiveAsyncClientTest : public testing::Test
 protected:
     const std::string m_recordingChannel = "aeron:udp?endpoint=localhost:3333";
     const std::int32_t m_recordingStreamId = 33;
+    aeron_archive_context_t *m_archiveCtx = nullptr;
     aeron_archive_t *m_archive = nullptr;
+
+    void TearDown() override
+    {
+        disconnect();
+    }
 
     void connect(const std::string& aeronDir)
     {
-        aeron_archive_context_t *ctx;
-        ASSERT_EQ(0, aeron_archive_context_init(&ctx)) << aeron_errmsg();
-        ASSERT_EQ(0, aeron_archive_context_set_aeron_directory_name(ctx, aeronDir.c_str())) << aeron_errmsg();
-        ASSERT_EQ(0, aeron_archive_context_set_control_request_channel(ctx, "aeron:udp?endpoint=localhost:8010")) << aeron_errmsg();
-        ASSERT_EQ(0, aeron_archive_context_set_control_response_channel(ctx, "aeron:udp?endpoint=localhost:0")) << aeron_errmsg();
-        ASSERT_EQ(0, Credentials::defaultCredentials().configure(ctx)) << aeron_errmsg();
+        ASSERT_EQ(0, aeron_archive_context_init(&m_archiveCtx)) << aeron_errmsg();
+        ASSERT_EQ(0, aeron_archive_context_set_aeron_directory_name(m_archiveCtx, aeronDir.c_str())) << aeron_errmsg();
+        ASSERT_EQ(0, aeron_archive_context_set_control_request_channel(m_archiveCtx, "aeron:udp?endpoint=localhost:8010")) << aeron_errmsg();
+        ASSERT_EQ(0, aeron_archive_context_set_control_response_channel(m_archiveCtx, "aeron:udp?endpoint=localhost:0")) << aeron_errmsg();
+        ASSERT_EQ(0, Credentials::defaultCredentials().configure(m_archiveCtx)) << aeron_errmsg();
 
-        ASSERT_EQ(0, aeron_archive_connect(&m_archive, ctx)) << aeron_errmsg();
+        ASSERT_EQ(0, aeron_archive_connect(&m_archive, m_archiveCtx)) << aeron_errmsg();
     }
 
     void disconnect()
@@ -70,6 +75,12 @@ protected:
         {
             ASSERT_EQ(0, aeron_archive_close(m_archive)) << aeron_errmsg();
             m_archive = nullptr;
+        }
+
+        if (nullptr != m_archiveCtx)
+        {
+            ASSERT_EQ(0, aeron_archive_context_close(m_archiveCtx));
+            m_archiveCtx = nullptr;
         }
     }
 
@@ -612,6 +623,8 @@ TEST_F(AeronArchiveAsyncClientTest, testAeronArchiveAsyncClient)
 
         ASSERT_EQ(0, aeron_archive_async_client_destroy(client));
     }
+
+    ASSERT_EQ(0, aeron_archive_context_close(context));
 }
 
 TEST_F(AeronArchiveAsyncClientTest, shouldAllowToStopReplay)
@@ -661,6 +674,7 @@ TEST_F(AeronArchiveAsyncClientTest, shouldAllowToStopReplay)
     pollUntilTrue("EOS", client, [&] { return aeron_image_is_end_of_stream(image); });
 
     ASSERT_EQ(0, aeron_archive_async_client_destroy(client));
+    ASSERT_EQ(0, aeron_archive_context_close(context));
 }
 
 TEST_F(AeronArchiveAsyncClientTest, shouldCloseItselfIfErrorIsTerminal)
@@ -681,4 +695,5 @@ TEST_F(AeronArchiveAsyncClientTest, shouldCloseItselfIfErrorIsTerminal)
     EXPECT_TRUE(aeron_archive_async_client_is_closed(client));
 
     EXPECT_EQ(0, aeron_archive_async_client_destroy(client));
+    EXPECT_EQ(0, aeron_archive_context_close(context));
 }
