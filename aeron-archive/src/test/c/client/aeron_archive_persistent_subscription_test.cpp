@@ -4646,6 +4646,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldReconnectToTheArchiveAfterA
     ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
     aeron_archive_close(remote_archive);
     aeron_archive_context_close(remote_archive_ctx);
+    aeron_archive_context_close(persistent_subscription_archive_ctx);
 }
 
 #if defined(__linux__)
