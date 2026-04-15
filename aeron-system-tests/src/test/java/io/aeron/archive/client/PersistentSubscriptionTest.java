@@ -607,7 +607,7 @@ abstract class PersistentSubscriptionTest
 
     @InterruptAfter(5)
     @Test
-    void replayStartPositionMustBeAlignWithFrameBoundary()
+    void replayStartPositionMustBeAlignedOnFrameBoundary()
     {
         final PersistentPublication persistentPublication =
             PersistentPublication.create(aeronArchive, MDC_PUBLICATION_CHANNEL, STREAM_ID);
