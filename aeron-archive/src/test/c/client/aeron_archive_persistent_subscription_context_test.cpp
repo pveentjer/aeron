@@ -197,13 +197,7 @@ TEST_F(AeronArchivePersistentSubscriptionContextTest, shouldRejectNullListener)
 TEST_F(AeronArchivePersistentSubscriptionContextTest, testValidContextWithExternalAeron)
 {
     DriverResource driver;
-
-    aeron_t *aeron = nullptr;
-    aeron_context_t *aeron_ctx = nullptr;
-    ASSERT_EQ(0, aeron_context_init(&aeron_ctx)) << aeron_errmsg();
-    aeron_context_set_dir(aeron_ctx, driver.aeronDir().c_str());
-    ASSERT_EQ(0, aeron_init(&aeron, aeron_ctx)) << aeron_errmsg();
-    ASSERT_EQ(0, aeron_start(aeron)) << aeron_errmsg();
+    AeronResource aeron{driver.aeronDir()};
 
     aeron_archive_context_t *archive_context;
     ASSERT_EQ(0, aeron_archive_context_init(&archive_context)) << aeron_errmsg();
@@ -216,13 +210,13 @@ TEST_F(AeronArchivePersistentSubscriptionContextTest, testValidContextWithExtern
     EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_live_stream_id(context, 1000)) << aeron_errmsg();
     EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_replay_channel(context, "aeron:ipc")) << aeron_errmsg();
     EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_replay_stream_id(context, 2000)) << aeron_errmsg();
-    EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_aeron(context, aeron)) << aeron_errmsg();
+    EXPECT_EQ(0, aeron_archive_persistent_subscription_context_set_aeron(context, aeron.aeron())) << aeron_errmsg();
     EXPECT_EQ(0, aeron_archive_persistent_subscription_context_conclude(context)) << aeron_errmsg();
     EXPECT_EQ(0, aeron_archive_persistent_subscription_context_close(context)) << aeron_errmsg();
 
     EXPECT_EQ(0, aeron_archive_context_close(archive_context)) << aeron_errmsg();
-    aeron_close(aeron);
-    aeron_context_close(aeron_ctx);
+
+    EXPECT_FALSE(aeron_is_closed(aeron.aeron()));
 }
 
 TEST_F(AeronArchivePersistentSubscriptionContextTest, testValidContextWithOwnedAeron)
