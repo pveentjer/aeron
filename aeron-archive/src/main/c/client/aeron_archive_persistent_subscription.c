@@ -901,34 +901,44 @@ static void on_archive_error(void *clientd, int errcode, const char *errmsg)
     }
 }
 
-static void persistent_subscription_set_join_difference_counter(
-    aeron_archive_persistent_subscription_t *persistent_subscription,
-    int64_t value)
+static void join_difference(aeron_archive_persistent_subscription_t *persistent_subscription, int64_t join_difference)
 {
-    if (NULL != persistent_subscription->context->join_difference_counter &&
-        !aeron_counter_is_closed(persistent_subscription->context->join_difference_counter))
+    persistent_subscription->join_difference = join_difference;
+
+    aeron_counter_t *join_difference_counter = persistent_subscription->context->join_difference_counter;
+    if (!aeron_counter_is_closed(join_difference_counter))
     {
-        aeron_counter_set_release(aeron_counter_addr(persistent_subscription->context->join_difference_counter), value);
+        aeron_counter_set_release(aeron_counter_addr(join_difference_counter), join_difference);
     }
 }
 
-static void persistent_subscription_increment_live_joined_counter(
-    aeron_archive_persistent_subscription_t *persistent_subscription)
+static void on_live_joined(aeron_archive_persistent_subscription_t *persistent_subscription)
 {
-    if (NULL != persistent_subscription->context->live_joined_counter &&
-        !aeron_counter_is_closed(persistent_subscription->context->live_joined_counter))
+    aeron_counter_t *live_joined_counter = persistent_subscription->context->live_joined_counter;
+    if (!aeron_counter_is_closed(live_joined_counter))
     {
-        aeron_counter_increment_release(aeron_counter_addr(persistent_subscription->context->live_joined_counter));
+        aeron_counter_increment_release(aeron_counter_addr(live_joined_counter));
+    }
+
+    aeron_archive_persistent_subscription_listener_t *listener = &persistent_subscription->listener;
+    if (NULL != listener->on_live_joined)
+    {
+        listener->on_live_joined(listener->clientd);
     }
 }
 
-static void persistent_subscription_increment_live_left_counter(
-    aeron_archive_persistent_subscription_t *persistent_subscription)
+static void on_live_left(aeron_archive_persistent_subscription_t *persistent_subscription)
 {
-    if (NULL != persistent_subscription->context->live_left_counter &&
-        !aeron_counter_is_closed(persistent_subscription->context->live_left_counter))
+    aeron_counter_t *live_left_counter = persistent_subscription->context->live_left_counter;
+    if (!aeron_counter_is_closed(live_left_counter))
     {
-        aeron_counter_increment_release(aeron_counter_addr(persistent_subscription->context->live_left_counter));
+        aeron_counter_increment_release(aeron_counter_addr(live_left_counter));
+    }
+
+    aeron_archive_persistent_subscription_listener_t *listener = &persistent_subscription->listener;
+    if (NULL != listener->on_live_left)
+    {
+        listener->on_live_left(listener->clientd);
     }
 }
 
@@ -1032,6 +1042,8 @@ int aeron_archive_persistent_subscription_create(
     strncpy(_persistent_subscription->replay_channel_uri, context->replay_channel, AERON_URI_MAX_LENGTH - 1);
     _persistent_subscription->replay_channel_uri[AERON_URI_MAX_LENGTH - 1] = '\0';
 
+    join_difference(_persistent_subscription, INT64_MIN);
+
     transition(_persistent_subscription, AWAIT_ARCHIVE_CONNECTION);
 
     *persistent_subscription = _persistent_subscription;
@@ -1111,8 +1123,7 @@ static void set_up_replay(aeron_archive_persistent_subscription_t *persistent_su
         &persistent_subscription->max_recorded_position,
         persistent_subscription->list_recording_request.term_buffer_length >> 2);
 
-    persistent_subscription->join_difference = INT64_MIN;
-    persistent_subscription_set_join_difference_counter(persistent_subscription, INT64_MIN);
+    join_difference(persistent_subscription, INT64_MIN);
 
     if (persistent_subscription->replay_channel_type == REPLAY_CHANNEL_SESSION_SPECIFIC)
     {
@@ -1830,10 +1841,9 @@ static int replay(
                 persistent_subscription->live_subscription,
                 0);
 
-            persistent_subscription->join_difference =
-                aeron_image_position(persistent_subscription->live_image) - aeron_image_position(image);
-            persistent_subscription_set_join_difference_counter(
-                persistent_subscription, persistent_subscription->join_difference);
+            int64_t live_position = aeron_image_position(persistent_subscription->live_image);
+            int64_t replay_position = aeron_image_position(image);
+            join_difference(persistent_subscription, live_position - replay_position);
 
             transition(persistent_subscription, ATTEMPT_SWITCH);
 
@@ -1893,7 +1903,6 @@ static aeron_controlled_fragment_handler_action_t replay_catchup_controlled_frag
     if (current_replay_position == persistent_subscription->next_live_position)
     {
         transition(persistent_subscription, LIVE);
-        persistent_subscription_increment_live_joined_counter(persistent_subscription);
         return AERON_ACTION_ABORT;
     }
     return aeron_image_controlled_fragment_assembler_handler(
@@ -1942,7 +1951,6 @@ static int attempt_switch(
     if (replay_position == live_position)
     {
         transition(persistent_subscription, LIVE);
-        persistent_subscription_increment_live_joined_counter(persistent_subscription);
     }
     else
     {
@@ -1961,8 +1969,8 @@ static int attempt_switch(
         {
             clean_up_live_subscription(persistent_subscription);
 
-            persistent_subscription->join_difference = INT64_MIN;
-            persistent_subscription_set_join_difference_counter(persistent_subscription, INT64_MIN);
+            join_difference(persistent_subscription, INT64_MIN);
+
             max_recorded_position_reset(
                 &persistent_subscription->max_recorded_position,
                 persistent_subscription->list_recording_request.term_buffer_length >> 2);
@@ -2000,11 +2008,7 @@ static int attempt_switch(
     {
         clean_up_replay(persistent_subscription);
         clean_up_replay_subscription(persistent_subscription);
-
-        if (NULL != persistent_subscription->listener.on_live_joined)
-        {
-            persistent_subscription->listener.on_live_joined(persistent_subscription->listener.clientd);
-        }
+        on_live_joined(persistent_subscription);
     }
 
     return fragments;
@@ -2068,15 +2072,9 @@ static int await_live(aeron_archive_persistent_subscription_t *persistent_subscr
             aeron_image_t *image = aeron_subscription_image_at_index(persistent_subscription->live_subscription, 0);
             persistent_subscription->live_image = image;
             persistent_subscription->position = aeron_image_position(image);
-
-            persistent_subscription->join_difference = 0;
-            persistent_subscription_set_join_difference_counter(persistent_subscription, 0);
+            join_difference(persistent_subscription, 0);
             transition(persistent_subscription, LIVE);
-
-            if (NULL != persistent_subscription->listener.on_live_joined)
-            {
-                persistent_subscription->listener.on_live_joined(persistent_subscription->listener.clientd);
-            }
+            on_live_joined(persistent_subscription);
 
             return 1;
         }
@@ -2106,13 +2104,7 @@ static int live(
         persistent_subscription->position = aeron_image_position(image);
         clean_up_live_subscription(persistent_subscription);
         set_up_replay(persistent_subscription);
-
-        persistent_subscription_increment_live_left_counter(persistent_subscription);
-
-        if (NULL != persistent_subscription->listener.on_live_left)
-        {
-            persistent_subscription->listener.on_live_left(persistent_subscription->listener.clientd);
-        }
+        on_live_left(persistent_subscription);
 
         return 1;
     }

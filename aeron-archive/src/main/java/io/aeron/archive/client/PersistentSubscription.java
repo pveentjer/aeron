@@ -136,7 +136,7 @@ public final class PersistentSubscription implements AutoCloseable
     private Image liveImage;
     private ControlledFragmentHandler controlledFragmentHandler;
     private FragmentHandler uncontrolledFragmentHandler;
-    private long joinDifference = Long.MIN_VALUE;
+    private long joinDifference;
     private long nextLivePosition = Aeron.NULL_VALUE;
     private long position;
 
@@ -163,16 +163,13 @@ public final class PersistentSubscription implements AutoCloseable
         liveJoinedCounter = ctx.liveJoinedCounter;
         position = ctx.startPosition;
 
+        joinDifference(Long.MIN_VALUE);
+
         state = State.AWAIT_ARCHIVE_CONNECTION;
 
         if (!stateCounter.isClosed())
         {
             stateCounter.setRelease(state.code);
-        }
-
-        if (!joinDifferenceCounter.isClosed())
-        {
-            joinDifferenceCounter.setRelease(joinDifference);
         }
     }
 
@@ -351,9 +348,24 @@ public final class PersistentSubscription implements AutoCloseable
         }
     }
 
+    Context context()
+    {
+        return ctx;
+    }
+
     long joinDifference()
     {
         return joinDifference;
+    }
+
+    private void joinDifference(final long joinDifference)
+    {
+        this.joinDifference = joinDifference;
+
+        if (!joinDifferenceCounter.isClosed())
+        {
+            joinDifferenceCounter.setRelease(joinDifference);
+        }
     }
 
     private int awaitArchiveConnection()
@@ -486,12 +498,7 @@ public final class PersistentSubscription implements AutoCloseable
 
     private void setUpReplay()
     {
-        joinDifference = Long.MIN_VALUE;
-
-        if (!joinDifferenceCounter.isClosed())
-        {
-            joinDifferenceCounter.setRelease(joinDifference);
-        }
+        joinDifference(Long.MIN_VALUE);
 
         maxRecordedPosition.reset(listRecordingRequest.termBufferLength >> 2);
 
@@ -994,12 +1001,7 @@ public final class PersistentSubscription implements AutoCloseable
 
                 final long livePosition = liveImage.position();
                 final long replayPosition = replayImage.position();
-                joinDifference = livePosition - replayPosition;
-
-                if (!joinDifferenceCounter.isClosed())
-                {
-                    joinDifferenceCounter.setRelease(joinDifference);
-                }
+                joinDifference(livePosition - replayPosition);
 
                 state(State.ATTEMPT_SWITCH);
 
@@ -1057,21 +1059,6 @@ public final class PersistentSubscription implements AutoCloseable
         if (replayPosition == livePosition)
         {
             state(State.LIVE);
-
-            if (!liveJoinedCounter.isClosed())
-            {
-                liveJoinedCounter.incrementRelease();
-            }
-
-            logJoinedLive(
-                recordingId,
-                replayChannel,
-                replayStreamId,
-                liveChannel,
-                liveStreamId,
-                liveImage.sessionId(),
-                livePosition
-            );
         }
         else
         {
@@ -1090,12 +1077,7 @@ public final class PersistentSubscription implements AutoCloseable
             {
                 cleanUpLiveSubscription();
 
-                joinDifference = Long.MIN_VALUE;
-
-                if (!joinDifferenceCounter.isClosed())
-                {
-                    joinDifferenceCounter.setRelease(joinDifference);
-                }
+                joinDifference(Long.MIN_VALUE);
 
                 maxRecordedPosition.reset(listRecordingRequest.termBufferLength >> 2);
 
@@ -1122,7 +1104,7 @@ public final class PersistentSubscription implements AutoCloseable
         {
             cleanUpReplay();
             cleanUpReplaySubscription();
-            listener.onLiveJoined();
+            onLiveJoined();
         }
 
         return fragments;
@@ -1173,21 +1155,6 @@ public final class PersistentSubscription implements AutoCloseable
         if (currentReplayPosition == nextLivePosition)
         {
             state(State.LIVE);
-
-            if (!liveJoinedCounter.isClosed())
-            {
-                liveJoinedCounter.incrementRelease();
-            }
-
-            logJoinedLive(
-                recordingId,
-                replayChannel,
-                replayStreamId,
-                liveChannel,
-                liveStreamId,
-                liveImage.sessionId(),
-                nextLivePosition
-            );
             return ControlledFragmentHandler.Action.ABORT;
         }
         if (controlled)
@@ -1248,24 +1215,9 @@ public final class PersistentSubscription implements AutoCloseable
             {
                 liveImage = liveSubscription.imageAtIndex(0);
                 position = liveImage.position();
-                joinDifference = 0;
-
-                if (!joinDifferenceCounter.isClosed())
-                {
-                    joinDifferenceCounter.setRelease(joinDifference);
-                }
-
+                joinDifference(0);
                 state(State.LIVE);
-                listener.onLiveJoined();
-                logJoinedLive(
-                    recordingId,
-                    replayChannel,
-                    replayStreamId,
-                    liveChannel,
-                    liveStreamId,
-                    liveImage.sessionId(),
-                    position
-                );
+                onLiveJoined();
 
                 return 1;
             }
@@ -1287,12 +1239,7 @@ public final class PersistentSubscription implements AutoCloseable
             position = image.position();
             cleanUpLiveSubscription();
             setUpReplay();
-            listener.onLiveLeft();
-
-            if (!liveLeftCounter.isClosed())
-            {
-                liveLeftCounter.incrementRelease();
-            }
+            onLiveLeft();
 
             return 1;
         }
@@ -1333,6 +1280,36 @@ public final class PersistentSubscription implements AutoCloseable
         final int liveSessionId,
         final long joinPosition)
     {
+    }
+
+    private void onLiveJoined()
+    {
+        logJoinedLive(
+            recordingId,
+            replayChannel,
+            replayStreamId,
+            liveChannel,
+            liveStreamId,
+            liveImage.sessionId(),
+            liveImage.position()
+        );
+
+        if (!liveJoinedCounter.isClosed())
+        {
+            liveJoinedCounter.incrementRelease();
+        }
+
+        listener.onLiveJoined();
+    }
+
+    private void onLiveLeft()
+    {
+        if (!liveLeftCounter.isClosed())
+        {
+            liveLeftCounter.incrementRelease();
+        }
+
+        listener.onLiveLeft();
     }
 
     private int doPoll(final Image image, final int fragmentLimit, final boolean controlled)

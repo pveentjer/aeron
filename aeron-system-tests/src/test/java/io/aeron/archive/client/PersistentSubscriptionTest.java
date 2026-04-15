@@ -220,6 +220,7 @@ abstract class PersistentSubscriptionTest
 
     @Test
     @InterruptAfter(15)
+    @SuppressWarnings("MethodLength")
     void shouldSwitchFromReplayToLiveAndFallBackToReplay()
     {
         final PersistentPublication persistentPublication =
@@ -235,6 +236,7 @@ abstract class PersistentSubscriptionTest
         try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
         {
             assertEquals(0, listener.liveJoinedCount);
+            verify(persistentSubscription);
 
             // Start consuming messages over replay
             executeUntil(() -> fragmentHandler.hasReceivedPayloads(1),
@@ -318,6 +320,8 @@ abstract class PersistentSubscriptionTest
                     fourthMessageBatch
                 );
             }
+
+            verify(persistentSubscription);
         }
     }
 
@@ -653,6 +657,8 @@ abstract class PersistentSubscriptionTest
             );
 
             Tests.await(() -> archive.context().replaySessionCounter().get() == 0);
+
+            verify(persistentSubscription);
         }
     }
 
@@ -686,6 +692,8 @@ abstract class PersistentSubscriptionTest
                 () -> poll(persistentSubscription, fragmentHandler, 10));
 
             assertPayloads(fragmentHandler.receivedPayloads, newMessages);
+
+            verify(persistentSubscription);
         }
     }
 
@@ -716,6 +724,8 @@ abstract class PersistentSubscriptionTest
                 () -> poll(persistentSubscription, fragmentHandler, 10));
 
             assertPayloads(fragmentHandler.receivedPayloads, messages);
+
+            verify(persistentSubscription);
         }
     }
 
@@ -768,6 +778,8 @@ abstract class PersistentSubscriptionTest
                 () -> poll(persistentSubscription, fragmentHandler, 10));
 
             assertPayloads(fragmentHandler.receivedPayloads, messages);
+
+            verify(persistentSubscription);
         }
     }
 
@@ -831,6 +843,8 @@ abstract class PersistentSubscriptionTest
             executeUntil(() -> fragmentHandler.hasReceivedPayloads(payloads.size()), pollSubscription);
 
             assertPayloads(fragmentHandler.receivedPayloads, payloads);
+
+            verify(persistentSubscription);
         }
     }
 
@@ -872,6 +886,7 @@ abstract class PersistentSubscriptionTest
             executeUntil(
                 persistentSubscription::isLive,
                 () -> poll(persistentSubscription, fragmentHandler, 1));
+            verify(persistentSubscription);
         }
     }
 
@@ -903,6 +918,7 @@ abstract class PersistentSubscriptionTest
                 () -> fragmentHandler.hasReceivedPayloads(secondMessageBatch.size()),
                 () -> poll(persistentSubscription, fragmentHandler, 1));
             assertPayloads(fragmentHandler.receivedPayloads, secondMessageBatch);
+            verify(persistentSubscription);
         }
     }
 
@@ -991,6 +1007,7 @@ abstract class PersistentSubscriptionTest
             assertEquals(0, listener.liveLeftCount);
             assertEquals(0, persistentSubscription.joinDifference());
             assertPayloads(fragmentHandler.receivedPayloads, replayMessages, liveMessages);
+            verify(persistentSubscription);
 
             Tests.await(() -> archive.context().replaySessionCounter().get() == 0);
         }
@@ -1078,6 +1095,7 @@ abstract class PersistentSubscriptionTest
                 fragmentHandler.receivedPayloads,
                 messagesToConsumeOnReplay, messagesToConsumeAfterAddingLive, messagesToConsumeOnLive
             );
+            verify(persistentSubscription);
         }
     }
 
@@ -1132,6 +1150,8 @@ abstract class PersistentSubscriptionTest
             // The persistent subscription will add the live chanel when live is at 4k,
             // which is 28k behind where it got up to on replay
             assertEquals(-28 * 1024L, persistentSubscription.joinDifference());
+
+            verify(persistentSubscription);
         }
     }
 
@@ -1248,6 +1268,8 @@ abstract class PersistentSubscriptionTest
 
             printResults(t0, persistentSubscription, ratePerSecond, publisherMessagesPerSecond,
                 publisherBpePerSecond, controlMessagesPerSecond);
+
+            verify(persistentSubscription);
         }
     }
 
@@ -1327,6 +1349,8 @@ abstract class PersistentSubscriptionTest
                 () -> poll(persistentSubscription, fragmentHandler, 1));
 
             assertPayloads(fragmentHandler.receivedPayloads, List.of(largeMessage));
+
+            verify(persistentSubscription);
         }
     }
 
@@ -1364,6 +1388,8 @@ abstract class PersistentSubscriptionTest
 
             assertTrue(persistentSubscription.isLive());
             assertFalse(persistentSubscription.isReplaying());
+
+            verify(persistentSubscription);
         }
     }
 
@@ -1422,6 +1448,7 @@ abstract class PersistentSubscriptionTest
             assertTrue(persistentSubscription.isLive());
             assertFalse(persistentSubscription.isReplaying());
             assertPayloads(fragmentHandler.receivedPayloads, oldMessages, newMessages);
+            verify(persistentSubscription);
         }
     }
 
@@ -1470,6 +1497,7 @@ abstract class PersistentSubscriptionTest
             assertThat(listener.lastException.getMessage(), containsString(
                 "ERROR - replay request failed")
             );
+            verify(persistentSubscription);
         }
     }
 
@@ -1524,6 +1552,8 @@ abstract class PersistentSubscriptionTest
             Tests.await(() -> archive.context().replaySessionCounter().get() == 1);
 
             assertPayloads(fragmentHandler.receivedPayloads, messages, moreMessages);
+
+            verify(persistentSubscription);
         }
     }
 
@@ -1615,6 +1645,8 @@ abstract class PersistentSubscriptionTest
                     fourthMessageBatch
                 );
             }
+
+            verify(persistentSubscription);
         }
     }
 
@@ -1758,6 +1790,8 @@ abstract class PersistentSubscriptionTest
                 listener.lastException.getMessage(),
                 containsString("must be less than the limit position=")
             );
+
+            verify(persistentSubscription);
         }
     }
 
@@ -1823,6 +1857,8 @@ abstract class PersistentSubscriptionTest
                 listener.lastException.getMessage(),
                 containsString("unknown recording id:")
             );
+
+            verify(persistentSubscription);
         }
     }
 
@@ -1905,6 +1941,7 @@ abstract class PersistentSubscriptionTest
                 () -> poll(persistentSubscription, fragmentHandler, 10)
             );
             assertPayloads(fragmentHandler.receivedPayloads, firstMessageBatch, secondMessageBatch, thirdMessagesBatch);
+            verify(persistentSubscription);
         }
     }
 
@@ -2023,6 +2060,8 @@ abstract class PersistentSubscriptionTest
                 () -> poll(persistentSubscription, fragmentHandler, 10));
 
             assertPayloads(fragmentHandler.receivedPayloads, firstMessageBatch, secondMessageBatch);
+
+            verify(persistentSubscription);
         }
     }
 
@@ -2102,6 +2141,8 @@ abstract class PersistentSubscriptionTest
                 () -> poll(persistentSubscription, fragmentHandler, 1)
             );
             assertPayloads(fragmentHandler.receivedPayloads, List.of(largeMessage));
+
+            verify(persistentSubscription);
         }
     }
 
@@ -2367,6 +2408,7 @@ abstract class PersistentSubscriptionTest
 
             assertEquals(1, listener.liveJoinedCount);
             assertEquals(0, listener.liveLeftCount);
+            verify(persistentSubscription);
 
             if (victimFlow == NetworkFlow.LIVE)
             {
@@ -2415,6 +2457,8 @@ abstract class PersistentSubscriptionTest
                     checkForInterrupt("failed to drain the stream");
                 }
             }
+
+            verify(persistentSubscription);
         }
     }
 
@@ -2704,6 +2748,19 @@ abstract class PersistentSubscriptionTest
         }
 
         assertPayloads(receivedPayloads, allPayloads);
+    }
+
+    private void verify(final PersistentSubscription persistentSubscription)
+    {
+        final PersistentSubscription.Context context = persistentSubscription.context();
+
+        assertEquals(persistentSubscription.joinDifference(), context.joinDifferenceCounter().get());
+
+        if (context.listener() == listener)
+        {
+            assertEquals(listener.liveJoinedCount, context.liveJoinedCounter().get());
+            assertEquals(listener.liveLeftCount, context.liveLeftCounter().get());
+        }
     }
 
     private static Stream<Arguments> liveChannels()
