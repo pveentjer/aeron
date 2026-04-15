@@ -2109,18 +2109,8 @@ static int live(aeron_archive_persistent_subscription_t *persistent_subscription
 
 static int do_work(aeron_archive_persistent_subscription_t *persistent_subscription, struct poll_ctx *poll_ctx)
 {
-    int poll_result = aeron_archive_async_client_poll(persistent_subscription->archive);
-    if (poll_result < 0)
-    {
-        // TODO is this needed? if it is, it's missing resource cleanup
-        transition(persistent_subscription, FAILED);
+    int work_count = aeron_archive_async_client_poll(persistent_subscription->archive);
 
-        fire_on_error_with_aeron_err(persistent_subscription);
-
-        return poll_result;
-    }
-
-    int work_count = poll_result;
     switch (persistent_subscription->state)
     {
         case AWAIT_ARCHIVE_CONNECTION:
