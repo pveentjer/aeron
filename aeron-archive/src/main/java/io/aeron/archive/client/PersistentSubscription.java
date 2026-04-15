@@ -54,10 +54,10 @@ import static io.aeron.archive.codecs.ControlResponseCode.OK;
 import static io.aeron.archive.codecs.ControlResponseCode.RECORDING_UNKNOWN;
 
 /**
- * A {@code PersistentSubscription} allows to consume messages of a live publication which is also being recorded to
- * an Archive, in order and without gaps, independently of when messages were published. It tries to read messages from
- * the live subscription as much as possible, falling back to an Archive replay when necessary, making any source
- * switches transparent to the application.
+ * A {@code PersistentSubscription} allows the consumption of messages from a live publication that is also being
+ * recorded to an Archive, in order and without gaps, regardless of when the messages were published.
+ * It tries to read messages from the live subscription as much as possible, falling back to an Archive replay when
+ * necessary, making any source switches transparent to the application.
  * <p>
  * It offers:
  * <ul>
@@ -1681,7 +1681,7 @@ public final class PersistentSubscription implements AutoCloseable
         /**
          * Has the context had the {@link #conclude()} method called.
          *
-         * @return true of the {@link #conclude()} method has been called.
+         * @return true if the {@link #conclude()} method has been called.
          */
         public boolean isConcluded()
         {
@@ -1754,7 +1754,7 @@ public final class PersistentSubscription implements AutoCloseable
         /**
          * Get the top level Aeron directory used for communication between the Aeron client and Media Driver.
          *
-         * @return The top level Aeron directory.
+         * @return the top level Aeron directory.
          */
         public String aeronDirectoryName()
         {
@@ -1909,7 +1909,7 @@ public final class PersistentSubscription implements AutoCloseable
         }
 
         /**
-         * Set the {@link PersistentSubscriptionListener} in use for the {@code PersistentSubscription}.
+         * Get the {@link PersistentSubscriptionListener} in use for the {@code PersistentSubscription}.
          *
          * @return the {@code PersistentSubscriptionListener} in use.
          */
