@@ -450,9 +450,9 @@ abstract class PersistentSubscriptionTest
         }
     }
 
-    @InterruptAfter(10)
     @ParameterizedTest
     @ValueSource(longs = { 0, 1024 })
+    @InterruptAfter(10)
     void canReplayFromStartOfRecording(final long recordingStartPosition)
     {
         final String channel = new ChannelUriStringBuilder()
@@ -487,8 +487,8 @@ abstract class PersistentSubscriptionTest
         }
     }
 
-    @InterruptAfter(10)
     @Test
+    @InterruptAfter(10)
     void canReplayFromSpecifiedPosition()
     {
         final String channel = new ChannelUriStringBuilder()
@@ -605,8 +605,8 @@ abstract class PersistentSubscriptionTest
         }
     }
 
-    @InterruptAfter(5)
     @Test
+    @InterruptAfter(5)
     void replayStartPositionMustBeAlignedOnFrameBoundary()
     {
         final PersistentPublication persistentPublication =
@@ -729,8 +729,8 @@ abstract class PersistentSubscriptionTest
         }
     }
 
-    @InterruptAfter(10)
     @Test
+    @InterruptAfter(10)
     void shouldJoinLiveWhenItBecomesAvailable()
     {
         // Ensure a recording exists for the stream.
@@ -848,9 +848,9 @@ abstract class PersistentSubscriptionTest
         }
     }
 
-    @InterruptAfter(10)
     @ParameterizedTest
     @ValueSource(longs = { FROM_START, FROM_LIVE })
+    @InterruptAfter(10)
     void shouldConnectToArchiveWhenItBecomesAvailable(final long startPosition, final @TempDir Path tempDir)
     {
         archive.close();
@@ -1501,8 +1501,8 @@ abstract class PersistentSubscriptionTest
         }
     }
 
-    @InterruptAfter(10)
     @Test
+    @InterruptAfter(10)
     void shouldStayOnAReplayWhenLiveCannotConnect()
     {
         final PersistentPublication persistentPublication =
@@ -2147,8 +2147,8 @@ abstract class PersistentSubscriptionTest
     }
 
     @ParameterizedTest
-    @InterruptAfter(15)
     @ValueSource(strings = { UNICAST_CHANNEL, IPC_CHANNEL })
+    @InterruptAfter(15)
     void anUntetheredPersistentSubscriptionCanFallBackToReplay(final String channel)
     {
         final ChannelUriStringBuilder channelUriStringBuilder = new ChannelUriStringBuilder(channel);
@@ -2240,8 +2240,8 @@ abstract class PersistentSubscriptionTest
         }
     }
 
-    @InterruptAfter(5)
     @Test
+    @InterruptAfter(5)
     void shouldFailWhenLivePublicationIsRevoked()
     {
         final ExclusivePublication publication =
