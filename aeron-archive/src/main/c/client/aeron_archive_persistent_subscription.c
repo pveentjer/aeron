@@ -1502,7 +1502,7 @@ static int await_replay_channel_endpoint(aeron_archive_persistent_subscription_t
     if (aeron_subscription_try_resolve_channel_endpoint_port(
         persistent_subscription->replay_subscription,
         persistent_subscription->replay_channel_uri,
-        sizeof(persistent_subscription->replay_channel_uri)) < 0)
+        sizeof(persistent_subscription->replay_channel_uri)) <= 0)
     {
         // Not yet resolved, try again next poll
         return 0;
