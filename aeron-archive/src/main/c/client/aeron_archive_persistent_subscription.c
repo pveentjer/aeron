@@ -199,6 +199,19 @@ struct aeron_archive_persistent_subscription_stct
     aeron_archive_proxy_t *response_channel_archive_proxy;
 };
 
+struct poll_ctx
+{
+    bool controlled;
+    union
+    {
+        aeron_controlled_fragment_handler_t controlled;
+        aeron_fragment_handler_t uncontrolled;
+    }
+    handler;
+    void *clientd;
+    size_t fragment_limit;
+};
+
 int aeron_archive_persistent_subscription_context_init(aeron_archive_persistent_subscription_context_t **context)
 {
     if (NULL == context)
@@ -1731,39 +1744,31 @@ static bool do_add_live_subscription(aeron_archive_persistent_subscription_t *pe
 static int do_poll(
     aeron_archive_persistent_subscription_t *persistent_subscription,
     aeron_image_t *image,
-    void *handler,
-    void *clientd,
-    size_t fragment_limit,
-    bool controlled)
+    struct poll_ctx *poll_ctx)
 {
-    if (controlled)
+    if (poll_ctx->controlled)
     {
-        persistent_subscription->assembler->delegate = (aeron_controlled_fragment_handler_t)handler;
-        persistent_subscription->assembler->delegate_clientd = clientd;
+        persistent_subscription->assembler->delegate = poll_ctx->handler.controlled;
+        persistent_subscription->assembler->delegate_clientd = poll_ctx->clientd;
         return aeron_image_controlled_poll(
             image,
             aeron_image_controlled_fragment_assembler_handler,
             persistent_subscription->assembler,
-            fragment_limit);
+            poll_ctx->fragment_limit);
     }
     else
     {
-        persistent_subscription->uncontrolled_assembler->delegate = (aeron_fragment_handler_t)handler;
-        persistent_subscription->uncontrolled_assembler->delegate_clientd = clientd;
+        persistent_subscription->uncontrolled_assembler->delegate = poll_ctx->handler.uncontrolled;
+        persistent_subscription->uncontrolled_assembler->delegate_clientd = poll_ctx->clientd;
         return aeron_image_poll(
             image,
             aeron_image_fragment_assembler_handler,
             persistent_subscription->uncontrolled_assembler,
-            fragment_limit);
+            poll_ctx->fragment_limit);
     }
 }
 
-static int replay(
-    aeron_archive_persistent_subscription_t *persistent_subscription,
-    void *handler,
-    void *clientd,
-    size_t fragment_limit,
-    bool controlled)
+static int replay(aeron_archive_persistent_subscription_t *persistent_subscription, struct poll_ctx *poll_ctx)
 {
     aeron_image_t *image = persistent_subscription->replay_image;
 
@@ -1856,7 +1861,7 @@ static int replay(
         }
     }
 
-    int fragments = do_poll(persistent_subscription, image, handler, clientd, fragment_limit, controlled);
+    int fragments = do_poll(persistent_subscription, image, poll_ctx);
 
     persistent_subscription->position = aeron_image_position(image);
 
@@ -1933,12 +1938,7 @@ static aeron_controlled_fragment_handler_action_t replay_catchup_uncontrolled_fr
     return AERON_ACTION_CONTINUE;
 }
 
-static int attempt_switch(
-    aeron_archive_persistent_subscription_t *persistent_subscription,
-    void *handler,
-    void *clientd,
-    size_t fragment_limit,
-    bool controlled)
+static int attempt_switch(aeron_archive_persistent_subscription_t *persistent_subscription, struct poll_ctx *poll_ctx)
 {
     int fragments = 0;
 
@@ -1984,24 +1984,24 @@ static int attempt_switch(
             live_image,
             live_catchup_fragment_handler,
             persistent_subscription,
-            fragment_limit);
+            poll_ctx->fragment_limit);
 
-        if (controlled)
+        if (poll_ctx->controlled)
         {
-            persistent_subscription->assembler->delegate = (aeron_controlled_fragment_handler_t)handler;
-            persistent_subscription->assembler->delegate_clientd = clientd;
+            persistent_subscription->assembler->delegate = poll_ctx->handler.controlled;
+            persistent_subscription->assembler->delegate_clientd = poll_ctx->clientd;
         }
         else
         {
-            persistent_subscription->uncontrolled_assembler->delegate = (aeron_fragment_handler_t)handler;
-            persistent_subscription->uncontrolled_assembler->delegate_clientd = clientd;
+            persistent_subscription->uncontrolled_assembler->delegate = poll_ctx->handler.uncontrolled;
+            persistent_subscription->uncontrolled_assembler->delegate_clientd = poll_ctx->clientd;
         }
 
         fragments += aeron_image_controlled_poll(
             replay_image,
-            controlled ? replay_catchup_controlled_fragment_handler : replay_catchup_uncontrolled_fragment_handler,
+            poll_ctx->controlled ? replay_catchup_controlled_fragment_handler : replay_catchup_uncontrolled_fragment_handler,
             persistent_subscription,
-            fragment_limit);
+            poll_ctx->fragment_limit);
     }
 
     if (aeron_archive_persistent_subscription_is_live(persistent_subscription))
@@ -2088,16 +2088,11 @@ static int await_live(aeron_archive_persistent_subscription_t *persistent_subscr
     return 0;
 }
 
-static int live(
-    aeron_archive_persistent_subscription_t *persistent_subscription,
-    void *handler,
-    void *clientd,
-    size_t fragment_limit,
-    bool controlled)
+static int live(aeron_archive_persistent_subscription_t *persistent_subscription, struct poll_ctx *poll_ctx)
 {
     aeron_image_t *image = persistent_subscription->live_image;
 
-    int fragments = do_poll(persistent_subscription, image, handler, clientd, fragment_limit, controlled);
+    int fragments = do_poll(persistent_subscription, image, poll_ctx);
 
     if (fragments == 0 && aeron_image_is_closed(image))
     {
@@ -2112,12 +2107,7 @@ static int live(
     return fragments;
 }
 
-static int do_work(
-    aeron_archive_persistent_subscription_t *persistent_subscription,
-    void *handler,
-    void *clientd,
-    size_t fragment_limit,
-    bool controlled)
+static int do_work(aeron_archive_persistent_subscription_t *persistent_subscription, struct poll_ctx *poll_ctx)
 {
     int poll_result = aeron_archive_async_client_poll(persistent_subscription->archive);
     if (poll_result < 0)
@@ -2170,10 +2160,10 @@ static int do_work(
             work_count += await_replay_token(persistent_subscription);
             break;
         case REPLAY:
-            work_count += replay(persistent_subscription, handler, clientd, fragment_limit, controlled);
+            work_count += replay(persistent_subscription, poll_ctx);
             break;
         case ATTEMPT_SWITCH:
-            work_count += attempt_switch(persistent_subscription, handler, clientd, fragment_limit, controlled);
+            work_count += attempt_switch(persistent_subscription, poll_ctx);
             break;
         case ADD_LIVE_SUBSCRIPTION:
             work_count += add_live_subscription(persistent_subscription);
@@ -2182,7 +2172,7 @@ static int do_work(
             work_count += await_live(persistent_subscription);
             break;
         case LIVE:
-            work_count += live(persistent_subscription, handler, clientd, fragment_limit, controlled);
+            work_count += live(persistent_subscription, poll_ctx);
             break;
         case FAILED:
             break;
@@ -2197,7 +2187,15 @@ int aeron_archive_persistent_subscription_poll(
     void *clientd,
     size_t fragment_limit)
 {
-    return do_work(persistent_subscription, (void *)handler, clientd, fragment_limit, false);
+    struct poll_ctx poll_ctx =
+        {
+            .controlled = false,
+            .handler.uncontrolled = handler,
+            .clientd = clientd,
+            .fragment_limit = fragment_limit,
+        };
+
+    return do_work(persistent_subscription, &poll_ctx);
 }
 
 int aeron_archive_persistent_subscription_controlled_poll(
@@ -2206,7 +2204,15 @@ int aeron_archive_persistent_subscription_controlled_poll(
     void *clientd,
     size_t fragment_limit)
 {
-    return do_work(persistent_subscription, (void *)handler, clientd, fragment_limit, true);
+    struct poll_ctx poll_ctx =
+        {
+            .controlled = true,
+            .handler.controlled = handler,
+            .clientd = clientd,
+            .fragment_limit = fragment_limit,
+        };
+
+    return do_work(persistent_subscription, &poll_ctx);
 }
 
 bool aeron_archive_persistent_subscription_is_live(aeron_archive_persistent_subscription_t *persistent_subscription)
