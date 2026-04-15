@@ -642,7 +642,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldAutoAllocateCounters)
     ASSERT_NE(AERON_NULL_COUNTER_ID, live_joined_counter_id);
 
     ASSERT_EQ(0, *aeron_counters_reader_addr(counters_reader, state_counter_id));
-    ASSERT_EQ(0, *aeron_counters_reader_addr(counters_reader, join_difference_counter_id));
+    ASSERT_EQ(INT64_MIN, *aeron_counters_reader_addr(counters_reader, join_difference_counter_id));
     ASSERT_EQ(0, *aeron_counters_reader_addr(counters_reader, live_joined_counter_id));
     ASSERT_EQ(0, *aeron_counters_reader_addr(counters_reader, live_left_counter_id));
 
@@ -692,7 +692,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldUseUserProvidedCounters)
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
 
     ASSERT_EQ(0, *aeron_counter_addr(state_counter));
-    ASSERT_EQ(0, *aeron_counter_addr(join_difference_counter));
+    ASSERT_EQ(INT64_MIN, *aeron_counter_addr(join_difference_counter));
     ASSERT_EQ(0, *aeron_counter_addr(live_joined_counter));
     ASSERT_EQ(0, *aeron_counter_addr(live_left_counter));
 
