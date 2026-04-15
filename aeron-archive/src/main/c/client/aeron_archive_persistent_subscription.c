@@ -1075,15 +1075,14 @@ int aeron_archive_persistent_subscription_close(aeron_archive_persistent_subscri
 {
     if (NULL != persistent_subscription)
     {
-        // TODO take into account aeron ownership?
         clean_up_live_subscription(persistent_subscription);
         clean_up_request_publication(persistent_subscription);
         clean_up_replay(persistent_subscription);
         clean_up_replay_subscription(persistent_subscription);
         aeron_archive_async_client_destroy(persistent_subscription->archive);
+        aeron_archive_persistent_subscription_context_close(persistent_subscription->context);
         aeron_image_fragment_assembler_delete(persistent_subscription->uncontrolled_assembler);
         aeron_image_controlled_fragment_assembler_delete(persistent_subscription->assembler);
-        aeron_archive_persistent_subscription_context_close(persistent_subscription->context);
         aeron_free(persistent_subscription);
     }
 
