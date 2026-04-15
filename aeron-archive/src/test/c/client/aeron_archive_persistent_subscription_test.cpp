@@ -87,11 +87,6 @@ public:
         m_messages.emplace_back(buffer, buffer + length);
     }
 
-    void clear()
-    {
-        m_messages.clear();
-    }
-
 private:
     std::vector<std::vector<uint8_t>> m_messages;
 };
@@ -228,7 +223,6 @@ public:
 
         return stop_position;
     }
-
 
     void persist(const std::vector<std::vector<uint8_t>>& messages) const
     {
