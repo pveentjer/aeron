@@ -49,15 +49,6 @@ static const int32_t STREAM_ID = 1000;
 static const int32_t ONE_KB_MESSAGE_SIZE = 1024 - AERON_DATA_HEADER_LENGTH;
 static const int32_t FLOW_CONTROL_RECEIVERS_COUNTER_TYPE_ID = 17;
 
-struct ListenerState
-{
-    int error_count = 0;
-    int last_errcode = 0;
-    std::string last_error_message;
-    int live_joined_count = 0;
-    int live_left_count = 0;
-};
-
 class MessageCapturingFragmentHandler
 {
 public:
@@ -89,6 +80,43 @@ public:
 
 private:
     std::vector<std::vector<uint8_t>> m_messages;
+};
+
+class TestListener
+{
+public:
+    int error_count = 0;
+    int last_errcode = 0;
+    std::string last_error_message;
+    int live_joined_count = 0;
+    int live_left_count = 0;
+
+    void attachTo(aeron_archive_persistent_subscription_context_t *context)
+    {
+        aeron_archive_persistent_subscription_listener_t listener = { onLiveJoined, onLiveLeft, onError, this };
+        aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+    }
+
+private:
+    static void onLiveJoined(void *clientd)
+    {
+        TestListener *listener = static_cast<TestListener*>(clientd);
+        listener->live_joined_count++;
+    }
+
+    static void onLiveLeft(void *clientd)
+    {
+        TestListener *listener = static_cast<TestListener*>(clientd);
+        listener->live_left_count++;
+    }
+
+    static void onError(void *clientd, int errcode, const char *message)
+    {
+        TestListener *listener = static_cast<TestListener*>(clientd);
+        listener->last_errcode = errcode;
+        listener->last_error_message = message;
+        listener->error_count++;
+    }
 };
 
 class PrintingListener
@@ -1616,18 +1644,6 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldDropFromLiveBackToReplayThe
 
     AeronResource aeron(m_aeronDir);
 
-    ListenerState listener_state = {};
-    aeron_archive_persistent_subscription_listener_t listener = {};
-    listener.clientd = &listener_state;
-    listener.on_live_joined = [](void *clientd)
-    {
-        static_cast<ListenerState *>(clientd)->live_joined_count++;
-    };
-    listener.on_live_left = [](void *clientd)
-    {
-        static_cast<ListenerState *>(clientd)->live_left_count++;
-    };
-
     aeron_archive_context_t *archive_ctx = createArchiveContext();
     aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
         aeron.aeron(),
@@ -1635,7 +1651,9 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldDropFromLiveBackToReplayThe
         persistent_publication.recordingId());
 
     aeron_archive_persistent_subscription_context_set_live_channel(context, MDC_SUBSCRIPTION_CHANNEL.c_str());
-    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+
+    TestListener listener;
+    listener.attachTo(context);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -1650,7 +1668,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldDropFromLiveBackToReplayThe
             10);
     };
 
-    ASSERT_EQ(0, listener_state.live_joined_count);
+    ASSERT_EQ(0, listener.live_joined_count);
 
     // Phase 2: replay recorded messages
     executeUntil(
@@ -1678,8 +1696,8 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldDropFromLiveBackToReplayThe
         poller,
         [&] { return aeron_archive_persistent_subscription_is_live(persistent_subscription); });
 
-    ASSERT_EQ(1, listener_state.live_joined_count);
-    ASSERT_EQ(0, listener_state.live_left_count);
+    ASSERT_EQ(1, listener.live_joined_count);
+    ASSERT_EQ(0, listener.live_left_count);
     ASSERT_EQ(payloads.size(), handler.messageCount());
 
     // Phase 4: consume more messages while live
@@ -1743,7 +1761,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldDropFromLiveBackToReplayThe
             [&] { return aeron_archive_persistent_subscription_is_replaying(persistent_subscription); });
 
         ASSERT_TRUE(aeron_archive_persistent_subscription_is_replaying(persistent_subscription));
-        ASSERT_EQ(1, listener_state.live_left_count);
+        ASSERT_EQ(1, listener.live_left_count);
 
         // Phase 7: recover - persistent subscription catches up via replay and rejoins live
         const std::vector<std::vector<uint8_t>> messages_after_rejoin = generateFixedMessages(5, ONE_KB_MESSAGE_SIZE);
@@ -1761,7 +1779,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldDropFromLiveBackToReplayThe
                        aeron_archive_persistent_subscription_is_live(persistent_subscription);
             });
 
-        ASSERT_EQ(2, listener_state.live_joined_count);
+        ASSERT_EQ(2, listener.live_joined_count);
 
         std::vector<std::vector<uint8_t>> all_messages;
         all_messages.insert(all_messages.end(), payloads.begin(), payloads.end());
@@ -1788,24 +1806,14 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldHandlePublisherStoppingWhil
 
     AeronResource aeron(m_aeronDir);
 
-    ListenerState listener_state = {};
-    aeron_archive_persistent_subscription_listener_t listener = {};
-    listener.clientd = &listener_state;
-    listener.on_live_joined = [](void *clientd)
-    {
-        static_cast<ListenerState *>(clientd)->live_joined_count++;
-    };
-    listener.on_live_left = [](void *clientd)
-    {
-        static_cast<ListenerState *>(clientd)->live_left_count++;
-    };
-
     aeron_archive_context_t *archive_ctx = createArchiveContext();
     aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
         aeron.aeron(),
         archive_ctx,
         persistent_publication.recordingId());
-    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+
+    TestListener listener;
+    listener.attachTo(context);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -1824,7 +1832,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldHandlePublisherStoppingWhil
         "becomes live",
         poller,
         [&] { return aeron_archive_persistent_subscription_is_live(persistent_subscription); });
-    ASSERT_EQ(1, listener_state.live_joined_count);
+    ASSERT_EQ(1, listener.live_joined_count);
     ASSERT_TRUE(MessagesEq(messages, handler.messages()));
 
     // Close the publication to force the live image to close
@@ -1833,8 +1841,8 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldHandlePublisherStoppingWhil
     executeUntil(
         "leaves live",
         poller,
-        [&] { return listener_state.live_left_count == 1; });
-    ASSERT_EQ(1, listener_state.live_left_count);
+        [&] { return listener.live_left_count == 1; });
+    ASSERT_EQ(1, listener.live_left_count);
 
     ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
     aeron_archive_context_close(archive_ctx);
@@ -1851,18 +1859,6 @@ TEST_F(AeronArchivePersistentSubscriptionTest, canFallbackToReplayAfterStartingF
 
     AeronResource aeron(m_aeronDir);
 
-    ListenerState listener_state = {};
-    aeron_archive_persistent_subscription_listener_t listener = {};
-    listener.clientd = &listener_state;
-    listener.on_live_joined = [](void *clientd)
-    {
-        static_cast<ListenerState *>(clientd)->live_joined_count++;
-    };
-    listener.on_live_left = [](void *clientd)
-    {
-        static_cast<ListenerState *>(clientd)->live_left_count++;
-    };
-
     aeron_archive_context_t *archive_ctx = createArchiveContext();
     aeron_archive_persistent_subscription_context_t *context = createPersistentSubscriptionContext(
         aeron.aeron(),
@@ -1873,7 +1869,9 @@ TEST_F(AeronArchivePersistentSubscriptionTest, canFallbackToReplayAfterStartingF
         "aeron:udp?endpoint=localhost:0",
         -5,
         AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
-    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+
+    TestListener listener;
+    listener.attachTo(context);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -1892,7 +1890,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, canFallbackToReplayAfterStartingF
         "becomes live",
         poller,
         [&] { return aeron_archive_persistent_subscription_is_live(persistent_subscription); });
-    ASSERT_EQ(1, listener_state.live_joined_count);
+    ASSERT_EQ(1, listener.live_joined_count);
     ASSERT_EQ(0, handler.messageCount());
 
     const std::vector<std::vector<uint8_t>> second_messages = generateFixedMessages(5, 128);
@@ -1959,7 +1957,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, canFallbackToReplayAfterStartingF
             "drops to replaying",
             poller,
             [&] { return aeron_archive_persistent_subscription_is_replaying(persistent_subscription); });
-        ASSERT_EQ(1, listener_state.live_left_count);
+        ASSERT_EQ(1, listener.live_left_count);
 
         const std::vector<std::vector<uint8_t>> messages_after_rejoin = generateFixedMessages(5, ONE_KB_MESSAGE_SIZE);
         persistent_publication.persist(messages_after_rejoin);
@@ -1973,7 +1971,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, canFallbackToReplayAfterStartingF
                        aeron_archive_persistent_subscription_is_live(persistent_subscription);
             });
 
-        ASSERT_EQ(2, listener_state.live_joined_count);
+        ASSERT_EQ(2, listener.live_joined_count);
 
         std::vector<std::vector<uint8_t>> all_messages;
         all_messages.insert(all_messages.end(), second_messages.begin(), second_messages.end());
@@ -2252,17 +2250,8 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldErrorIfRecordingDoesNotExis
         archive_ctx,
         13); // does not exist
 
-    ListenerState listener_state = {};
-    aeron_archive_persistent_subscription_listener_t listener = {};
-    listener.clientd = &listener_state;
-    listener.on_error = [](void *clientd, int errcode, const char *message)
-    {
-        ListenerState *state = static_cast<ListenerState *>(clientd);
-        state->error_count++;
-        state->last_errcode = errcode;
-        state->last_error_message = message;
-    };
-    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+    TestListener listener;
+    listener.attachTo(context);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -2279,8 +2268,8 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldErrorIfRecordingDoesNotExis
         },
         [&] { return aeron_archive_persistent_subscription_has_failed(persistent_subscription); });
 
-    ASSERT_EQ(1, listener_state.error_count);
-    ASSERT_NE(std::string::npos, listener_state.last_error_message.find("recording"));
+    ASSERT_EQ(1, listener.error_count);
+    ASSERT_NE(std::string::npos, listener.last_error_message.find("recording"));
 
     ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
     aeron_archive_context_close(archive_ctx);
@@ -2306,17 +2295,8 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldErrorIfRecordingStreamDoesN
 
     aeron_archive_persistent_subscription_context_set_live_stream_id(context, STREAM_ID + 1); // <-- mismatched
 
-    ListenerState listener_state = {};
-    aeron_archive_persistent_subscription_listener_t listener = {};
-    listener.clientd = &listener_state;
-    listener.on_error = [](void *clientd, int errcode, const char *message)
-    {
-        ListenerState *state = static_cast<ListenerState *>(clientd);
-        state->error_count++;
-        state->last_errcode = errcode;
-        state->last_error_message = message;
-    };
-    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+    TestListener listener;
+    listener.attachTo(context);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -2333,8 +2313,8 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldErrorIfRecordingStreamDoesN
         },
         [&] { return aeron_archive_persistent_subscription_has_failed(persistent_subscription); });
 
-    ASSERT_EQ(1, listener_state.error_count);
-    ASSERT_NE(std::string::npos, listener_state.last_error_message.find("stream"));
+    ASSERT_EQ(1, listener.error_count);
+    ASSERT_NE(std::string::npos, listener.last_error_message.find("stream"));
 
     ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
     aeron_archive_context_close(archive_ctx);
@@ -2365,17 +2345,8 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldErrorIfStartPositionIsBefor
     aeron_archive_persistent_subscription_context_set_live_channel(context, channel.c_str());
     // start_position is already 0 from default, below recording start of 1024
 
-    ListenerState listener_state = {};
-    aeron_archive_persistent_subscription_listener_t listener = {};
-    listener.clientd = &listener_state;
-    listener.on_error = [](void *clientd, int errcode, const char *message)
-    {
-        ListenerState *state = static_cast<ListenerState *>(clientd);
-        state->error_count++;
-        state->last_errcode = errcode;
-        state->last_error_message = message;
-    };
-    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+    TestListener listener;
+    listener.attachTo(context);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -2392,8 +2363,8 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldErrorIfStartPositionIsBefor
         },
         [&] { return aeron_archive_persistent_subscription_has_failed(persistent_subscription); });
 
-    ASSERT_EQ(1, listener_state.error_count);
-    ASSERT_NE(std::string::npos, listener_state.last_error_message.find("position"));
+    ASSERT_EQ(1, listener.error_count);
+    ASSERT_NE(std::string::npos, listener.last_error_message.find("position"));
 
     ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
     aeron_archive_context_close(archive_ctx);
@@ -2427,17 +2398,8 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldErrorIfStartPositionIsAfter
 
     aeron_archive_persistent_subscription_context_set_start_position(context, stop_position * 2); // <-- after end
 
-    ListenerState listener_state = {};
-    aeron_archive_persistent_subscription_listener_t listener = {};
-    listener.clientd = &listener_state;
-    listener.on_error = [](void *clientd, int errcode, const char *message)
-    {
-        ListenerState *state = static_cast<ListenerState *>(clientd);
-        state->error_count++;
-        state->last_errcode = errcode;
-        state->last_error_message = message;
-    };
-    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+    TestListener listener;
+    listener.attachTo(context);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -2454,8 +2416,8 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldErrorIfStartPositionIsAfter
         },
         [&] { return aeron_archive_persistent_subscription_has_failed(persistent_subscription); });
 
-    ASSERT_EQ(1, listener_state.error_count);
-    ASSERT_NE(std::string::npos, listener_state.last_error_message.find("position"));
+    ASSERT_EQ(1, listener.error_count);
+    ASSERT_NE(std::string::npos, listener.last_error_message.find("position"));
 
     ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
     aeron_archive_context_close(archive_ctx);
@@ -2511,17 +2473,6 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldErrorWhenStartPositionDoesN
 
     AeronResource aeron(m_aeronDir);
 
-    ListenerState listener_state = {};
-    aeron_archive_persistent_subscription_listener_t listener = {};
-    listener.clientd = &listener_state;
-    listener.on_error = [](void *clientd, int errcode, const char *message)
-    {
-        ListenerState *state = static_cast<ListenerState *>(clientd);
-        state->error_count++;
-        state->last_errcode = errcode;
-        state->last_error_message = message;
-    };
-
     aeron_archive_context_t *archive_ctx = createArchiveContext();
     aeron_archive_persistent_subscription_context_t *context = createPersistentSubscriptionContext(
         aeron.aeron(),
@@ -2532,7 +2483,9 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldErrorWhenStartPositionDoesN
         "aeron:udp?endpoint=localhost:0",
         -5,
         ONE_KB_MESSAGE_SIZE - 32); // misaligned start position
-    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+
+    TestListener listener;
+    listener.attachTo(context);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -2549,7 +2502,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldErrorWhenStartPositionDoesN
     executeUntil(
         "has error",
         poller,
-        [&] { return listener_state.error_count > 0; });
+        [&] { return listener.error_count > 0; });
 
     ASSERT_TRUE(aeron_archive_persistent_subscription_has_failed(persistent_subscription));
 
@@ -2571,15 +2524,6 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldFailWhenStartPositionEquals
 
     AeronResource aeron(m_aeronDir);
 
-    ListenerState listener_state = {};
-    aeron_archive_persistent_subscription_listener_t listener = {};
-    listener.clientd = &listener_state;
-    listener.on_error = [](void *clientd, int errcode, const char *message)
-    {
-        ListenerState *state = static_cast<ListenerState *>(clientd);
-        state->error_count++;
-    };
-
     aeron_archive_context_t *archive_ctx = createArchiveContext();
     aeron_archive_persistent_subscription_context_t *context = createPersistentSubscriptionContext(
         aeron.aeron(),
@@ -2590,7 +2534,9 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldFailWhenStartPositionEquals
         "aeron:udp?endpoint=localhost:0",
         -5,
         stop_position); // start position == stop position
-    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+
+    TestListener listener;
+    listener.attachTo(context);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -2609,7 +2555,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldFailWhenStartPositionEquals
         poller,
         [&] { return aeron_archive_persistent_subscription_has_failed(persistent_subscription); });
 
-    ASSERT_EQ(1, listener_state.error_count);
+    ASSERT_EQ(1, listener.error_count);
 
     ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
     aeron_archive_context_close(archive_ctx);
@@ -2651,23 +2597,14 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldPropagateErrorCodeAndMessag
     TestArchive archive = createArchive(m_aeronDir);
     AeronResource aeron(m_aeronDir);
 
-    ListenerState listener_state = {};
-    aeron_archive_persistent_subscription_listener_t listener = {};
-    listener.clientd = &listener_state;
-    listener.on_error = [](void *clientd, int errcode, const char *message)
-    {
-        ListenerState *state = static_cast<ListenerState *>(clientd);
-        state->error_count++;
-        state->last_errcode = errcode;
-        state->last_error_message = message;
-    };
-
     aeron_archive_context_t *archive_ctx = createArchiveContext();
     aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
         aeron.aeron(),
         archive_ctx,
         99999);
-    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+
+    TestListener listener;
+    listener.attachTo(context);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -2686,10 +2623,10 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldPropagateErrorCodeAndMessag
         poller,
         [&] { return aeron_archive_persistent_subscription_has_failed(persistent_subscription); });
 
-    ASSERT_EQ(1, listener_state.error_count);
-    ASSERT_NE(0, listener_state.last_errcode);
-    ASSERT_FALSE(listener_state.last_error_message.empty());
-    ASSERT_NE(std::string::npos, listener_state.last_error_message.find("recording"));
+    ASSERT_EQ(1, listener.error_count);
+    ASSERT_NE(0, listener.last_errcode);
+    ASSERT_FALSE(listener.last_error_message.empty());
+    ASSERT_NE(std::string::npos, listener.last_error_message.find("recording"));
 
     ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
     aeron_archive_context_close(archive_ctx);
@@ -2766,17 +2703,6 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldErrorIfStartPositionIsAfter
 
     AeronResource aeron(m_aeronDir);
 
-    ListenerState listener_state = {};
-    aeron_archive_persistent_subscription_listener_t listener = {};
-    listener.clientd = &listener_state;
-    listener.on_error = [](void *clientd, int errcode, const char *message)
-    {
-        ListenerState *state = static_cast<ListenerState *>(clientd);
-        state->error_count++;
-        state->last_errcode = errcode;
-        state->last_error_message = message;
-    };
-
     aeron_archive_context_t *archive_ctx = createArchiveContext();
     aeron_archive_persistent_subscription_context_t *context = createPersistentSubscriptionContext(
         aeron.aeron(),
@@ -2788,7 +2714,8 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldErrorIfStartPositionIsAfter
         -5,
         aeron_exclusive_publication_position(persistent_publication.publication()) * 2);
 
-    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+    TestListener listener;
+    listener.attachTo(context);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -2798,7 +2725,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldErrorIfStartPositionIsAfter
         [&] { return aeron_archive_persistent_subscription_controlled_poll(persistent_subscription, nullptr, nullptr, 1); },
         [&] { return aeron_archive_persistent_subscription_has_failed(persistent_subscription); });
 
-    ASSERT_EQ(1, listener_state.error_count);
+    ASSERT_EQ(1, listener.error_count);
 
     ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
     aeron_archive_context_close(archive_ctx);
@@ -2954,16 +2881,6 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldJoinLiveUponReachingEndOfRe
 
     AeronResource aeron(m_aeronDir);
 
-    ListenerState listener_state = {};
-    aeron_archive_persistent_subscription_listener_t listener = {};
-    listener.clientd = &listener_state;
-    listener.on_error = [](void *clientd, int errcode, const char *message)
-    {
-        ListenerState *state = static_cast<ListenerState *>(clientd);
-        state->error_count++;
-        state->last_error_message = message;
-    };
-
     aeron_archive_context_t *archive_ctx = createArchiveContext();
     aeron_archive_context_set_message_timeout_ns(archive_ctx, 500 * 1000 * 1000LL);
     aeron_archive_persistent_subscription_context_t *context = createPersistentSubscriptionContext(
@@ -2975,7 +2892,9 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldJoinLiveUponReachingEndOfRe
         "aeron:udp?endpoint=localhost:0",
         -5,
         0);
-    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+
+    TestListener listener;
+    listener.attachTo(context);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -2997,8 +2916,8 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldJoinLiveUponReachingEndOfRe
 
     // Should get a timeout error about no live image being available
     executeUntil("gets live timeout error", poller,
-        [&] { return listener_state.error_count > 0; });
-    EXPECT_NE(std::string::npos, listener_state.last_error_message.find("No image became available"));
+        [&] { return listener.error_count > 0; });
+    EXPECT_NE(std::string::npos, listener.last_error_message.find("No image became available"));
 
     // Restart the publication using extendRecording to resume the recording
     PersistentPublication resumed_publication =
@@ -3047,23 +2966,15 @@ TEST_F(AeronArchivePersistentSubscriptionTest, cannotFallbackToReplayWhenRecordi
 
     AeronResource aeron(m_aeronDir);
 
-    ListenerState listener_state = {};
-    aeron_archive_persistent_subscription_listener_t listener = {};
-    listener.clientd = &listener_state;
-    listener.on_error = [](void *clientd, int errcode, const char *message)
-    {
-        ListenerState *state = static_cast<ListenerState *>(clientd);
-        state->error_count++;
-        state->last_error_message = message;
-    };
-
     aeron_archive_context_t *archive_ctx = createArchiveContext();
     aeron_archive_persistent_subscription_context_t *context = createPersistentSubscriptionContext(
         aeron.aeron(), archive_ctx, persistent_publication.recordingId(),
         MDC_SUBSCRIPTION_CHANNEL, STREAM_ID,
         "aeron:udp?endpoint=localhost:0", -5,
         AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
-    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+
+    TestListener listener;
+    listener.attachTo(context);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -3120,7 +3031,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, cannotFallbackToReplayWhenRecordi
     executeUntil("has failed", poller,
         [&] { return aeron_archive_persistent_subscription_has_failed(persistent_subscription); });
 
-    ASSERT_GE(listener_state.error_count, 1);
+    ASSERT_GE(listener.error_count, 1);
 
     aeron_subscription_close(fast_subscription, nullptr, nullptr);
     ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
@@ -3149,23 +3060,15 @@ TEST_F(AeronArchivePersistentSubscriptionTest, cannotFallbackToReplayWhenRecordi
 
     AeronResource aeron(m_aeronDir);
 
-    ListenerState listener_state = {};
-    aeron_archive_persistent_subscription_listener_t listener = {};
-    listener.clientd = &listener_state;
-    listener.on_error = [](void *clientd, int errcode, const char *message)
-    {
-        ListenerState *state = static_cast<ListenerState *>(clientd);
-        state->error_count++;
-        state->last_error_message = message;
-    };
-
     aeron_archive_context_t *archive_ctx = createArchiveContext();
     aeron_archive_persistent_subscription_context_t *context = createPersistentSubscriptionContext(
         aeron.aeron(), archive_ctx, persistent_publication.recordingId(),
         MDC_SUBSCRIPTION_CHANNEL, STREAM_ID,
         "aeron:udp?endpoint=localhost:0", -5,
         AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
-    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+
+    TestListener listener;
+    listener.attachTo(context);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -3220,8 +3123,8 @@ TEST_F(AeronArchivePersistentSubscriptionTest, cannotFallbackToReplayWhenRecordi
     executeUntil("has failed", poller,
         [&] { return aeron_archive_persistent_subscription_has_failed(persistent_subscription); });
 
-    ASSERT_GE(listener_state.error_count, 1);
-    EXPECT_NE(std::string::npos, listener_state.last_error_message.find("recording"));
+    ASSERT_GE(listener.error_count, 1);
+    EXPECT_NE(std::string::npos, listener.last_error_message.find("recording"));
 
     aeron_subscription_close(fast_subscription, nullptr, nullptr);
     ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
@@ -3237,12 +3140,6 @@ TEST_F(AeronArchivePersistentSubscriptionTest, untetheredSpyCanFallbackToReplay)
 
     AeronResource aeron(m_aeronDir);
 
-    ListenerState live_listener_state = {};
-    aeron_archive_persistent_subscription_listener_t listener = {};
-    listener.clientd = &live_listener_state;
-    listener.on_live_joined = [](void *clientd) { static_cast<ListenerState *>(clientd)->live_joined_count++; };
-    listener.on_live_left = [](void *clientd) { static_cast<ListenerState *>(clientd)->live_left_count++; };
-
     aeron_archive_context_t *archive_ctx = createArchiveContext();
     aeron_archive_persistent_subscription_context_t *context = createPersistentSubscriptionContext(
         aeron.aeron(), archive_ctx, persistent_publication.recordingId(),
@@ -3250,7 +3147,9 @@ TEST_F(AeronArchivePersistentSubscriptionTest, untetheredSpyCanFallbackToReplay)
         STREAM_ID,
         "aeron:udp?endpoint=localhost:0", -5,
         AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
-    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+
+    TestListener listener;
+    listener.attachTo(context);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -3263,7 +3162,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, untetheredSpyCanFallbackToReplay)
 
     executeUntil("becomes live", poller,
         [&] { return aeron_archive_persistent_subscription_is_live(persistent_subscription); });
-    ASSERT_EQ(0, live_listener_state.live_left_count);
+    ASSERT_EQ(0, listener.live_left_count);
 
     // Flood messages via a fast consumer on a separate driver to make the untethered PS fall behind
     {
@@ -3306,7 +3205,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, untetheredSpyCanFallbackToReplay)
         // PS should drop from live and fall back to replay
         executeUntil("drops from live to replay", poller,
             [&] { return aeron_archive_persistent_subscription_is_replaying(persistent_subscription); });
-        ASSERT_EQ(1, live_listener_state.live_left_count);
+        ASSERT_EQ(1, listener.live_left_count);
 
         // PS should replay and rejoin live
         executeUntil("replays and rejoins live", poller,
@@ -3885,15 +3784,6 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldStartFromStoppedRecordingAn
 
     AeronResource aeron(m_aeronDir);
 
-    ListenerState listener_state = {};
-    aeron_archive_persistent_subscription_listener_t listener = {};
-    listener.clientd = &listener_state;
-    listener.on_error = [](void *clientd, int errcode, const char *message)
-    {
-        ListenerState *state = static_cast<ListenerState *>(clientd);
-        state->error_count++;
-    };
-
     aeron_archive_context_t *archive_ctx = createArchiveContext();
     aeron_archive_persistent_subscription_context_t *context = createPersistentSubscriptionContext(
         aeron.aeron(),
@@ -3904,7 +3794,9 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldStartFromStoppedRecordingAn
         "aeron:udp?endpoint=localhost:0",
         -5,
         0);
-    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+
+    TestListener listener;
+    listener.attachTo(context);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -3932,7 +3824,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldStartFromStoppedRecordingAn
         [&] { return aeron_archive_persistent_subscription_has_failed(persistent_subscription); });
 
     ASSERT_EQ(payloads.size(), handler.messageCount());
-    ASSERT_EQ(1, listener_state.error_count);
+    ASSERT_EQ(1, listener.error_count);
 
     ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
     aeron_archive_context_close(archive_ctx);
@@ -3989,14 +3881,6 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldFailWhenLivePublicationIsRe
     waitUntil("recording persisted",
         [&] { return *aeron_counters_reader_addr(counters_reader, rec_pos_id) >= aeron_exclusive_publication_position(exclusive_publication); });
 
-    ListenerState listener_state = {};
-    aeron_archive_persistent_subscription_listener_t listener = {};
-    listener.clientd = &listener_state;
-    listener.on_error = [](void *clientd, int errcode, const char *message)
-    {
-        static_cast<ListenerState *>(clientd)->error_count++;
-    };
-
     aeron_archive_context_t *persistent_subscription_archive_ctx = createArchiveContext();
     aeron_archive_persistent_subscription_context_t *context = createPersistentSubscriptionContext(
         aeron.aeron(),
@@ -4007,7 +3891,9 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldFailWhenLivePublicationIsRe
         "aeron:udp?endpoint=localhost:0",
         -5,
         AERON_PERSISTENT_SUBSCRIPTION_FROM_START);
-    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+
+    TestListener listener;
+    listener.attachTo(context);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -4033,7 +3919,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldFailWhenLivePublicationIsRe
     executeUntil(
         "has error",
         poller,
-        [&] { return listener_state.error_count > 0; });
+        [&] { return listener.error_count > 0; });
     ASSERT_TRUE(aeron_archive_persistent_subscription_has_failed(persistent_subscription));
 
     ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
@@ -4123,18 +4009,6 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldRetryAndRecoverWhenLiveIsNo
         [&] { return 0; },
         [&] { return aeron_subscription_image_count(temp_subscription) == 0; });
 
-    aeron_archive_persistent_subscription_listener_t listener = {};
-    ListenerState listener_clientd = { };
-    listener.clientd = &listener_clientd;
-    listener.on_error = [](void *clientd, int, const char *)
-    {
-        (static_cast<decltype(listener_clientd) *>(clientd)->error_count)++;
-    };
-    listener.on_live_joined = [](void *clientd)
-    {
-        (static_cast<decltype(listener_clientd) *>(clientd)->live_joined_count)++;
-    };
-
     aeron_archive_context_t *persistent_subscription_archive_ctx = createArchiveContext();
     aeron_archive_persistent_subscription_context_t *context = createPersistentSubscriptionContext(
         aeron.aeron(),
@@ -4145,7 +4019,9 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldRetryAndRecoverWhenLiveIsNo
         "aeron:udp?endpoint=localhost:0",
         -5,
         AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
-    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+
+    TestListener listener;
+    listener.attachTo(context);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -4162,8 +4038,8 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldRetryAndRecoverWhenLiveIsNo
     executeUntil(
         "has error",
         poller,
-        [&] { return listener_clientd.error_count > 0; });
-    ASSERT_EQ(0, listener_clientd.live_joined_count);
+        [&] { return listener.error_count > 0; });
+    ASSERT_EQ(0, listener.live_joined_count);
 
     // Create a new publication — subscription should recover
     aeron_exclusive_publication_t *new_publication = nullptr;
@@ -4531,17 +4407,6 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldReconnectToTheArchiveAfterA
         aeron_archive_context_get_control_response_stream_id(remote_archive_ctx) + 10);
     Credentials::defaultCredentials().configure(persistent_subscription_archive_ctx);
 
-    ListenerState listener_state = {};
-    aeron_archive_persistent_subscription_listener_t listener = {};
-    listener.clientd = &listener_state;
-    listener.on_error = [](void *clientd, int errcode, const char *message)
-    {
-        ListenerState *state = static_cast<ListenerState *>(clientd);
-        state->error_count++;
-        state->last_errcode = errcode;
-        state->last_error_message = message;
-    };
-
     aeron_archive_persistent_subscription_context_t *context = createPersistentSubscriptionContext(
         aeron1.aeron(),
         persistent_subscription_archive_ctx,
@@ -4551,7 +4416,6 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldReconnectToTheArchiveAfterA
         "aeron:udp?endpoint=localhost:0",
         -5,
         AERON_PERSISTENT_SUBSCRIPTION_FROM_START);
-    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
