@@ -46,8 +46,8 @@ TEST_F(PersistentSubscriptionContextWrapperTest, shouldThrowIfArchiveContextNotS
 
 TEST_F(PersistentSubscriptionContextWrapperTest, shouldThrowIfRecordingIdNotSet)
 {
-    AeronArchive::Context_t archiveCtx;
-    archiveCtx.controlRequestChannel(CONTROL_REQUEST_CHANNEL)
+    const std::shared_ptr<AeronArchive::Context_t> archiveCtx = std::make_shared<AeronArchive::Context_t>();
+    archiveCtx->controlRequestChannel(CONTROL_REQUEST_CHANNEL)
         .controlResponseChannel(CONTROL_RESPONSE_CHANNEL);
 
     PersistentSubscription::Context ctx;
@@ -63,8 +63,8 @@ TEST_F(PersistentSubscriptionContextWrapperTest, shouldThrowIfRecordingIdNotSet)
 
 TEST_F(PersistentSubscriptionContextWrapperTest, shouldThrowIfLiveChannelNotSet)
 {
-    AeronArchive::Context_t archiveCtx;
-    archiveCtx.controlRequestChannel(CONTROL_REQUEST_CHANNEL)
+    const std::shared_ptr<AeronArchive::Context_t> archiveCtx = std::make_shared<AeronArchive::Context_t>();
+    archiveCtx->controlRequestChannel(CONTROL_REQUEST_CHANNEL)
         .controlResponseChannel(CONTROL_RESPONSE_CHANNEL);
 
     PersistentSubscription::Context ctx;
@@ -80,8 +80,8 @@ TEST_F(PersistentSubscriptionContextWrapperTest, shouldThrowIfLiveChannelNotSet)
 
 TEST_F(PersistentSubscriptionContextWrapperTest, shouldThrowIfLiveStreamIdNotSet)
 {
-    AeronArchive::Context_t archiveCtx;
-    archiveCtx.controlRequestChannel(CONTROL_REQUEST_CHANNEL)
+    const std::shared_ptr<AeronArchive::Context_t> archiveCtx = std::make_shared<AeronArchive::Context_t>();
+    archiveCtx->controlRequestChannel(CONTROL_REQUEST_CHANNEL)
         .controlResponseChannel(CONTROL_RESPONSE_CHANNEL);
 
     PersistentSubscription::Context ctx;
@@ -98,8 +98,8 @@ TEST_F(PersistentSubscriptionContextWrapperTest, shouldThrowIfLiveStreamIdNotSet
 
 TEST_F(PersistentSubscriptionContextWrapperTest, shouldThrowIfReplayChannelNotSet)
 {
-    AeronArchive::Context_t archiveCtx;
-    archiveCtx.controlRequestChannel(CONTROL_REQUEST_CHANNEL)
+    const std::shared_ptr<AeronArchive::Context_t> archiveCtx = std::make_shared<AeronArchive::Context_t>();
+    archiveCtx->controlRequestChannel(CONTROL_REQUEST_CHANNEL)
         .controlResponseChannel(CONTROL_RESPONSE_CHANNEL);
 
     PersistentSubscription::Context ctx;
@@ -115,8 +115,8 @@ TEST_F(PersistentSubscriptionContextWrapperTest, shouldThrowIfReplayChannelNotSe
 
 TEST_F(PersistentSubscriptionContextWrapperTest, shouldThrowIfReplayStreamIdNotSet)
 {
-    AeronArchive::Context_t archiveCtx;
-    archiveCtx.controlRequestChannel(CONTROL_REQUEST_CHANNEL)
+    const std::shared_ptr<AeronArchive::Context_t> archiveCtx = std::make_shared<AeronArchive::Context_t>();
+    archiveCtx->controlRequestChannel(CONTROL_REQUEST_CHANNEL)
         .controlResponseChannel(CONTROL_RESPONSE_CHANNEL);
 
     PersistentSubscription::Context ctx;
@@ -133,8 +133,8 @@ TEST_F(PersistentSubscriptionContextWrapperTest, shouldThrowIfReplayStreamIdNotS
 
 TEST_F(PersistentSubscriptionContextWrapperTest, shouldThrowIfStartPositionIsInvalid)
 {
-    AeronArchive::Context_t archiveCtx;
-    archiveCtx.controlRequestChannel(CONTROL_REQUEST_CHANNEL)
+    std::shared_ptr<AeronArchive::Context_t> archiveCtx = std::make_shared<AeronArchive::Context_t>();
+    archiveCtx->controlRequestChannel(CONTROL_REQUEST_CHANNEL)
         .controlResponseChannel(CONTROL_RESPONSE_CHANNEL);
 
     PersistentSubscription::Context ctx;
@@ -151,8 +151,8 @@ TEST_F(PersistentSubscriptionContextWrapperTest, shouldThrowIfStartPositionIsInv
 
 TEST_F(PersistentSubscriptionContextWrapperTest, shouldThrowIfRecordingIdIsInvalid)
 {
-    AeronArchive::Context_t archiveCtx;
-    archiveCtx.controlRequestChannel(CONTROL_REQUEST_CHANNEL)
+    std::shared_ptr<AeronArchive::Context_t> archiveCtx = std::make_shared<AeronArchive::Context_t>();
+    archiveCtx->controlRequestChannel(CONTROL_REQUEST_CHANNEL)
         .controlResponseChannel(CONTROL_RESPONSE_CHANNEL);
 
     PersistentSubscription::Context ctx;
