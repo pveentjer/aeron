@@ -422,12 +422,6 @@ int aeron_archive_persistent_subscription_context_set_state_counter(
     return 0;
 }
 
-aeron_counter_t *aeron_archive_persistent_subscription_context_get_state_counter(
-    aeron_archive_persistent_subscription_context_t *context)
-{
-    return context->state_counter;
-}
-
 int aeron_archive_persistent_subscription_context_set_join_difference_counter(
     aeron_archive_persistent_subscription_context_t *context,
     aeron_counter_t *counter)
@@ -1227,7 +1221,7 @@ static bool validate_descriptor(aeron_archive_persistent_subscription_t *persist
             {
                 char message[256];
                 snprintf(message, sizeof(message),
-                    "Requested live stream with ID: %d does not match stream ID: %d for recording: %ld",
+                    "Requested live stream with ID: %d does not match stream ID: %d for recording: %" PRIi64,
                     persistent_subscription->context->live_stream_id,
                     req->stream_id,
                     persistent_subscription->context->recording_id);
@@ -1251,7 +1245,7 @@ static bool validate_descriptor(aeron_archive_persistent_subscription_t *persist
                 {
                     char message[256];
                     snprintf(message, sizeof(message),
-                        "requested replay start position=%ld is less than recording start position=%ld for recording %ld",
+                        "requested replay start position=%" PRIi64 " is less than recording start position=%" PRIi64 " for recording %" PRIi64,
                         persistent_subscription->position,
                         req->start_position,
                         persistent_subscription->context->recording_id);
@@ -1273,7 +1267,7 @@ static bool validate_descriptor(aeron_archive_persistent_subscription_t *persist
                 {
                     char message[256];
                     snprintf(message, sizeof(message),
-                        "requested replay start position=%ld must be less than the limit position=%ld for recording %ld",
+                        "requested replay start position=%" PRIi64 " must be less than the limit position=%" PRIi64 " for recording %" PRIi64,
                         persistent_subscription->position,
                         req->stop_position,
                         persistent_subscription->context->recording_id);
@@ -1300,7 +1294,7 @@ static bool validate_descriptor(aeron_archive_persistent_subscription_t *persist
         {
             char message[64];
             snprintf(message, sizeof(message),
-                "unknown recording id: %ld",
+                "unknown recording id: %" PRIi64,
                 persistent_subscription->context->recording_id);
 
             persistent_subscription->listener.on_error(
