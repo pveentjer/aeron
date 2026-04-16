@@ -371,6 +371,12 @@ int aeron_archive_persistent_subscription_context_set_listener(
     return 0;
 }
 
+aeron_counter_t *aeron_archive_persistent_subscription_context_get_state_counter(
+    aeron_archive_persistent_subscription_context_t *context)
+{
+    return context->state_counter;
+}
+
 int aeron_archive_persistent_subscription_context_set_state_counter(
     aeron_archive_persistent_subscription_context_t *context,
     aeron_counter_t *counter)

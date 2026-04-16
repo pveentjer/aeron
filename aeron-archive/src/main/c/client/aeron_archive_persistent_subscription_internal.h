@@ -21,6 +21,9 @@
 
 int aeron_archive_persistent_subscription_context_conclude(aeron_archive_persistent_subscription_context_t *context);
 
+aeron_counter_t *aeron_archive_persistent_subscription_context_get_state_counter(
+    aeron_archive_persistent_subscription_context_t *context);
+
 /**
  * Returns the join difference, i.e. the difference between the live position and the replay position
  * at the point the switch to live was attempted. A negative value means the replay was ahead of
