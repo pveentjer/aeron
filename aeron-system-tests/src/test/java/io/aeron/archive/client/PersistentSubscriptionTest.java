@@ -1511,7 +1511,7 @@ abstract class PersistentSubscriptionTest
         final List<byte[]> messages = generateRandomPayloads(5);
         persistentPublication.persist(messages);
 
-        final String incorrectLiveChannel = "aeron:udp?control=localhost:49582|control-mode=dynamic|fc=max";
+        final String incorrectLiveChannel = "aeron:udp?control=localhost:49582|control-mode=dynamic";
 
         persistentSubscriptionCtx
             .recordingId(persistentPublication.recordingId())
