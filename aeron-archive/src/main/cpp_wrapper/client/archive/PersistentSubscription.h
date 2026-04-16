@@ -68,9 +68,9 @@ public:
         }
 
         Context(const Context &other) = default;
-        Context& operator=(const Context& other) = default;
-        Context(Context &&) = delete;
-        Context &operator=(Context &&) = delete;
+        Context &operator=(const Context &other) = default;
+        Context(Context &&) = default;
+        Context &operator=(Context &&) = default;
 
         /**
          * Set the Aeron Archive context for the archive connection used by this
@@ -379,7 +379,9 @@ public:
                 ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
             }
 
-            if (aeron_archive_persistent_subscription_context_set_aeron_directory_name(context, m_aeronDirectoryName.c_str()) < 0)
+            if (!m_aeronDirectoryName.empty() &&
+                aeron_archive_persistent_subscription_context_set_aeron_directory_name(
+                    context, m_aeronDirectoryName.c_str()) < 0)
             {
                 ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
             }
