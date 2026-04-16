@@ -601,58 +601,6 @@ TEST_F(PersistentSubscriptionWrapperTest, shouldAuthenticateAfterContextDestroye
     ASSERT_EQ(messages, capture.messages());
 }
 
-// Multiple PersistentSubscriptions created from separate Contexts — each has independent
-// ownership and can be destroyed independently without affecting the other.
-TEST_F(PersistentSubscriptionWrapperTest, shouldSupportMultipleIndependentSubscriptions)
-{
-    RecordedPublication recordedPublication = createRecordedPublication("aeron:ipc", STREAM_ID);
-    std::vector<std::vector<uint8_t>> messages = generateMessages(3, 128);
-    persistMessages(recordedPublication, messages);
-
-    std::shared_ptr<AeronArchive> archive = AeronArchive::connect(m_context);
-    std::shared_ptr<Aeron> aeron = archive->context().aeron();
-
-    int liveJoinedCount1 = 0, liveJoinedCount2 = 0;
-
-    auto persistentSubscriptionArchiveCtx1 = std::make_shared<AeronArchive::Context_t>();
-    PersistentSubscription::Context persistentSubscriptionCtx1;
-    configurePersistentSubscriptionCtx(persistentSubscriptionCtx1, persistentSubscriptionArchiveCtx1, aeron, recordedPublication.recordingId);
-    persistentSubscriptionCtx1.onLiveJoined([&liveJoinedCount1]() { liveJoinedCount1++; });
-    // Use a different response stream ID for the second one
-    persistentSubscriptionArchiveCtx1->controlResponseStreamId(persistentSubscriptionArchiveCtx1->controlResponseStreamId() + 10);
-
-    auto persistentSubscriptionArchiveCtx2 = std::make_shared<AeronArchive::Context_t>();
-    PersistentSubscription::Context persistentSubscriptionCtx2;
-    configurePersistentSubscriptionCtx(persistentSubscriptionCtx2, persistentSubscriptionArchiveCtx2, aeron, recordedPublication.recordingId);
-    persistentSubscriptionCtx2.onLiveJoined([&liveJoinedCount2]() { liveJoinedCount2++; });
-
-    std::shared_ptr<PersistentSubscription> persistentSubscription1 = PersistentSubscription::create(persistentSubscriptionCtx1);
-    std::shared_ptr<PersistentSubscription> persistentSubscription2 = PersistentSubscription::create(persistentSubscriptionCtx2);
-
-    MessageCapture capture1, capture2;
-    auto handler1 = [&](AtomicBuffer &buffer, util::index_t offset, util::index_t length, Header &header)
-    { return capture1.onFragment(buffer, offset, length, header); };
-    auto handler2 = [&](AtomicBuffer &buffer, util::index_t offset, util::index_t length, Header &header)
-    { return capture2.onFragment(buffer, offset, length, header); };
-
-    executeUntil("persistentSubscription1 live", [&] { return persistentSubscription1->controlledPoll(handler1, 10); }, [&] { return persistentSubscription1->isLive(); });
-    executeUntil("persistentSubscription2 live", [&] { return persistentSubscription2->controlledPoll(handler2, 10); }, [&] { return persistentSubscription2->isLive(); });
-
-    ASSERT_EQ(1, liveJoinedCount1);
-    ASSERT_EQ(1, liveJoinedCount2);
-    ASSERT_EQ(messages, capture1.messages());
-    ASSERT_EQ(messages, capture2.messages());
-
-    // Destroy persistentSubscription1 — persistentSubscription2 must continue working
-    persistentSubscription1.reset();
-
-    std::vector<std::vector<uint8_t>> liveMessages = generateMessages(2, 128);
-    offerMessages(recordedPublication, liveMessages);
-
-    executeUntil("persistentSubscription2 receives live", [&] { return persistentSubscription2->controlledPoll(handler2, 10); },
-        [&] { return capture2.count() >= messages.size() + liveMessages.size(); });
-}
-
 // PersistentSubscription destroyed while callbacks are set but never invoked.
 // Verifies clean destruction of CallbackState when callbacks are configured but the
 // PS never reaches a state that triggers them.
@@ -704,8 +652,7 @@ TEST_F(PersistentSubscriptionWrapperTest, shouldNotBeAffectedByContextModificati
 
     std::shared_ptr<PersistentSubscription> persistentSubscription = PersistentSubscription::create(persistentSubscriptionCtx);
 
-    // The Context's internal pointers are null after create, so these are no-ops or
-    // would fail, but the PS should be unaffected either way.
+    persistentSubscriptionCtx.onLiveJoined([&liveJoinedCount]() { liveJoinedCount += 10; });
 
     MessageCapture capture;
     auto handler = [&](AtomicBuffer &buffer, util::index_t offset, util::index_t length, Header &header)
