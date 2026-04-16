@@ -242,14 +242,14 @@ public:
 
     void configurePersistentSubscriptionCtx(
         PersistentSubscription::Context &ctx,
-        AeronArchive::Context_t &archiveCtx,
+        std::shared_ptr<AeronArchive::Context_t> archiveCtx,
         std::shared_ptr<Aeron> aeron,
         std::int64_t recordingId,
         const std::string &liveChannel = std::string("aeron:ipc"),
         std::int64_t startPosition = 0)
     {
-        setCredentials(archiveCtx);
-        archiveCtx.controlRequestChannel(CONTROL_REQUEST_CHANNEL)
+        setCredentials(*archiveCtx);
+        archiveCtx->controlRequestChannel(CONTROL_REQUEST_CHANNEL)
             .controlResponseChannel(CONTROL_RESPONSE_CHANNEL)
             .controlResponseStreamId(m_context.controlResponseStreamId() + 20);
 
@@ -293,7 +293,7 @@ TEST_F(PersistentSubscriptionWrapperTest, shouldCycleThroughMultipleLiveReplayTr
     int liveLeftCount = 0;
 
     PersistentSubscription::Context persistentSubscriptionCtx;
-    AeronArchive::Context_t persistentSubscriptionArchiveCtx;
+    auto persistentSubscriptionArchiveCtx = std::make_shared<AeronArchive::Context_t>();
     configurePersistentSubscriptionCtx(persistentSubscriptionCtx, persistentSubscriptionArchiveCtx, aeron, recordedPublication.recordingId, MDC_SUBSCRIPTION_CHANNEL);
     persistentSubscriptionCtx.onLiveJoined([&liveJoinedCount]() { liveJoinedCount++; })
          .onLiveLeft([&liveLeftCount]() { liveLeftCount++; });
@@ -387,7 +387,7 @@ TEST_F(PersistentSubscriptionWrapperTest, shouldRespectAbortActionDuringReplayAn
     std::shared_ptr<Aeron> aeron = archive->context().aeron();
 
     PersistentSubscription::Context persistentSubscriptionCtx;
-    AeronArchive::Context_t persistentSubscriptionArchiveCtx;
+    auto persistentSubscriptionArchiveCtx = std::make_shared<AeronArchive::Context_t>();
     configurePersistentSubscriptionCtx(persistentSubscriptionCtx, persistentSubscriptionArchiveCtx, aeron, recordedPublication.recordingId);
 
     MessageCapture capture;
@@ -438,7 +438,7 @@ TEST_F(PersistentSubscriptionWrapperTest, shouldWorkAfterContextIsDestroyed)
     std::shared_ptr<Aeron> aeron = archive->context().aeron();
 
     std::shared_ptr<PersistentSubscription> persistentSubscription;
-    AeronArchive::Context_t persistentSubscriptionArchiveCtx;
+    auto persistentSubscriptionArchiveCtx = std::make_shared<AeronArchive::Context_t>();
 
     {
         PersistentSubscription::Context persistentSubscriptionCtx;
@@ -448,7 +448,7 @@ TEST_F(PersistentSubscriptionWrapperTest, shouldWorkAfterContextIsDestroyed)
         persistentSubscriptionCtx.onError([](int, const std::string &) {});
 
         persistentSubscription = PersistentSubscription::create(persistentSubscriptionCtx);
-        // persistentSubscriptionCtx destroyed here, but persistentSubscriptionArchiveCtx stays alive
+        // persistentSubscriptionCtx destroyed here
     }
 
     // PS must still work with PersistentSubscription::Context destroyed
@@ -483,7 +483,7 @@ TEST_F(PersistentSubscriptionWrapperTest, shouldWorkWhenContextDestroyedDuringAs
     std::shared_ptr<Aeron> aeron = archive->context().aeron();
 
     std::shared_ptr<PersistentSubscription> persistentSubscription;
-    AeronArchive::Context_t persistentSubscriptionArchiveCtx;
+    auto persistentSubscriptionArchiveCtx = std::make_shared<AeronArchive::Context_t>();
 
     {
         PersistentSubscription::Context persistentSubscriptionCtx;
@@ -516,7 +516,7 @@ TEST_F(PersistentSubscriptionWrapperTest, shouldFireListenerCallbacksAfterContex
 
     int liveJoinedCount = 0;
     std::shared_ptr<PersistentSubscription> persistentSubscription;
-    AeronArchive::Context_t persistentSubscriptionArchiveCtx;
+    auto persistentSubscriptionArchiveCtx = std::make_shared<AeronArchive::Context_t>();
 
     {
         PersistentSubscription::Context persistentSubscriptionCtx;
@@ -547,7 +547,7 @@ TEST_F(PersistentSubscriptionWrapperTest, shouldFireErrorCallbackAfterContextDes
 
     int errorCount = 0;
     std::shared_ptr<PersistentSubscription> persistentSubscription;
-    AeronArchive::Context_t persistentSubscriptionArchiveCtx;
+    auto persistentSubscriptionArchiveCtx = std::make_shared<AeronArchive::Context_t>();
 
     {
         PersistentSubscription::Context persistentSubscriptionCtx;
@@ -578,7 +578,7 @@ TEST_F(PersistentSubscriptionWrapperTest, shouldAuthenticateAfterContextDestroye
     std::shared_ptr<Aeron> aeron = archive->context().aeron();
 
     std::shared_ptr<PersistentSubscription> persistentSubscription;
-    AeronArchive::Context_t persistentSubscriptionArchiveCtx;
+    auto persistentSubscriptionArchiveCtx = std::make_shared<AeronArchive::Context_t>();
 
     {
         PersistentSubscription::Context persistentSubscriptionCtx;
@@ -614,14 +614,14 @@ TEST_F(PersistentSubscriptionWrapperTest, shouldSupportMultipleIndependentSubscr
 
     int liveJoinedCount1 = 0, liveJoinedCount2 = 0;
 
-    AeronArchive::Context_t persistentSubscriptionArchiveCtx1;
+    auto persistentSubscriptionArchiveCtx1 = std::make_shared<AeronArchive::Context_t>();
     PersistentSubscription::Context persistentSubscriptionCtx1;
     configurePersistentSubscriptionCtx(persistentSubscriptionCtx1, persistentSubscriptionArchiveCtx1, aeron, recordedPublication.recordingId);
     persistentSubscriptionCtx1.onLiveJoined([&liveJoinedCount1]() { liveJoinedCount1++; });
     // Use a different response stream ID for the second one
-    persistentSubscriptionArchiveCtx1.controlResponseStreamId(persistentSubscriptionArchiveCtx1.controlResponseStreamId() + 10);
+    persistentSubscriptionArchiveCtx1->controlResponseStreamId(persistentSubscriptionArchiveCtx1->controlResponseStreamId() + 10);
 
-    AeronArchive::Context_t persistentSubscriptionArchiveCtx2;
+    auto persistentSubscriptionArchiveCtx2 = std::make_shared<AeronArchive::Context_t>();
     PersistentSubscription::Context persistentSubscriptionCtx2;
     configurePersistentSubscriptionCtx(persistentSubscriptionCtx2, persistentSubscriptionArchiveCtx2, aeron, recordedPublication.recordingId);
     persistentSubscriptionCtx2.onLiveJoined([&liveJoinedCount2]() { liveJoinedCount2++; });
@@ -669,7 +669,7 @@ TEST_F(PersistentSubscriptionWrapperTest, shouldCleanUpCallbackStateWhenNeverTri
 
     {
         PersistentSubscription::Context persistentSubscriptionCtx;
-        AeronArchive::Context_t persistentSubscriptionArchiveCtx;
+        auto persistentSubscriptionArchiveCtx = std::make_shared<AeronArchive::Context_t>();
         configurePersistentSubscriptionCtx(persistentSubscriptionCtx, persistentSubscriptionArchiveCtx, aeron, recordedPublication.recordingId);
         persistentSubscriptionCtx.onLiveJoined([&]() { liveJoinedCalled = true; })
              .onLiveLeft([&]() { liveLeftCalled = true; })
@@ -698,7 +698,7 @@ TEST_F(PersistentSubscriptionWrapperTest, shouldNotBeAffectedByContextModificati
     int liveJoinedCount = 0;
 
     PersistentSubscription::Context persistentSubscriptionCtx;
-    AeronArchive::Context_t persistentSubscriptionArchiveCtx;
+    auto persistentSubscriptionArchiveCtx = std::make_shared<AeronArchive::Context_t>();
     configurePersistentSubscriptionCtx(persistentSubscriptionCtx, persistentSubscriptionArchiveCtx, aeron, recordedPublication.recordingId);
     persistentSubscriptionCtx.onLiveJoined([&liveJoinedCount]() { liveJoinedCount++; });
 

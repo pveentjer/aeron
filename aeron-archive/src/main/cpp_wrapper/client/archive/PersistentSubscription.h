@@ -16,6 +16,9 @@
 #ifndef AERON_ARCHIVE_WRAPPER_PERSISTENT_SUBSCRIPTION_H
 #define AERON_ARCHIVE_WRAPPER_PERSISTENT_SUBSCRIPTION_H
 
+#include <memory>
+#include <string>
+
 #include "AeronArchive.h"
 #include "client/aeron_archive_persistent_subscription.h"
 extern "C"
@@ -62,19 +65,10 @@ public:
     public:
         Context()
         {
-            if (aeron_archive_persistent_subscription_context_init(&m_context_t) < 0)
-            {
-                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
-            }
         }
 
-        ~Context()
-        {
-            aeron_archive_persistent_subscription_context_close(m_context_t);
-        }
-
-        Context(const Context &) = delete;
-        Context &operator=(const Context &) = delete;
+        Context(const Context &other) = default;
+        Context& operator=(const Context& other) = default;
         Context(Context &&) = delete;
         Context &operator=(Context &&) = delete;
 
@@ -87,14 +81,9 @@ public:
          * @param archiveContext the archive context.
          * @return this for fluent API.
          */
-        inline Context &archiveContext(AeronArchive::Context_t &archiveContext)
+        inline Context &archiveContext(std::shared_ptr<AeronArchive::Context_t> archiveContext)
         {
-            if (aeron_archive_persistent_subscription_context_set_archive_context(
-                m_context_t, archiveContext.m_aeron_archive_ctx_t) < 0)
-            {
-                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
-            }
-
+            m_aeronArchiveContext = std::move(archiveContext);
             return *this;
         }
 
@@ -106,12 +95,6 @@ public:
          */
         inline Context &aeron(std::shared_ptr<Aeron> aeron)
         {
-            if (aeron_archive_persistent_subscription_context_set_aeron(
-                m_context_t, aeron->aeron()) < 0)
-            {
-                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
-            }
-
             m_aeronW = std::move(aeron);
             return *this;
         }
@@ -125,12 +108,7 @@ public:
          */
         inline Context &aeronDirectoryName(const std::string &directoryName)
         {
-            if (aeron_archive_persistent_subscription_context_set_aeron_directory_name(
-                m_context_t, directoryName.c_str()) < 0)
-            {
-                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
-            }
-
+            m_aeronDirectoryName = directoryName;
             return *this;
         }
 
@@ -142,12 +120,7 @@ public:
          */
         inline Context &recordingId(std::int64_t recordingId)
         {
-            if (aeron_archive_persistent_subscription_context_set_recording_id(
-                m_context_t, recordingId) < 0)
-            {
-                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
-            }
-
+            m_recordingId = recordingId;
             return *this;
         }
 
@@ -158,7 +131,7 @@ public:
          */
         inline std::int64_t recordingId() const
         {
-            return aeron_archive_persistent_subscription_context_get_recording_id(m_context_t);
+            return m_recordingId;
         }
 
         /**
@@ -170,12 +143,7 @@ public:
          */
         inline Context &startPosition(std::int64_t startPosition)
         {
-            if (aeron_archive_persistent_subscription_context_set_start_position(
-                m_context_t, startPosition) < 0)
-            {
-                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
-            }
-
+            m_startPosition = startPosition;
             return *this;
         }
 
@@ -186,7 +154,7 @@ public:
          */
         inline std::int64_t startPosition() const
         {
-            return aeron_archive_persistent_subscription_context_get_start_position(m_context_t);
+            return m_startPosition;
         }
 
         /**
@@ -197,12 +165,7 @@ public:
          */
         inline Context &liveChannel(const std::string &channel)
         {
-            if (aeron_archive_persistent_subscription_context_set_live_channel(
-                m_context_t, channel.c_str()) < 0)
-            {
-                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
-            }
-
+            m_liveChannel = channel;
             return *this;
         }
 
@@ -213,7 +176,7 @@ public:
          */
         inline std::string liveChannel() const
         {
-            return aeron_archive_persistent_subscription_context_get_live_channel(m_context_t);
+            return m_liveChannel;
         }
 
         /**
@@ -224,12 +187,7 @@ public:
          */
         inline Context &liveStreamId(std::int32_t streamId)
         {
-            if (aeron_archive_persistent_subscription_context_set_live_stream_id(
-                m_context_t, streamId) < 0)
-            {
-                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
-            }
-
+            m_liveStreamId = streamId;
             return *this;
         }
 
@@ -240,7 +198,7 @@ public:
          */
         inline std::int32_t liveStreamId() const
         {
-            return aeron_archive_persistent_subscription_context_get_live_stream_id(m_context_t);
+            return m_liveStreamId;
         }
 
         /**
@@ -251,12 +209,7 @@ public:
          */
         inline Context &replayChannel(const std::string &channel)
         {
-            if (aeron_archive_persistent_subscription_context_set_replay_channel(
-                m_context_t, channel.c_str()) < 0)
-            {
-                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
-            }
-
+            m_replayChannel = channel;
             return *this;
         }
 
@@ -267,7 +220,7 @@ public:
          */
         inline std::string replayChannel() const
         {
-            return aeron_archive_persistent_subscription_context_get_replay_channel(m_context_t);
+            return m_replayChannel;
         }
 
         /**
@@ -278,12 +231,7 @@ public:
          */
         inline Context &replayStreamId(std::int32_t streamId)
         {
-            if (aeron_archive_persistent_subscription_context_set_replay_stream_id(
-                m_context_t, streamId) < 0)
-            {
-                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
-            }
-
+            m_replayStreamId = streamId;
             return *this;
         }
 
@@ -294,7 +242,7 @@ public:
          */
         inline std::int32_t replayStreamId() const
         {
-            return aeron_archive_persistent_subscription_context_get_replay_stream_id(m_context_t);
+            return m_replayStreamId;
         }
 
         /**
@@ -306,12 +254,6 @@ public:
          */
         inline Context &stateCounter(std::shared_ptr<Counter> counter)
         {
-            if (aeron_archive_persistent_subscription_context_set_state_counter(
-                m_context_t, counter->c_counter()) < 0)
-            {
-                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
-            }
-
             m_stateCounter = std::move(counter);
             return *this;
         }
@@ -325,12 +267,6 @@ public:
          */
         inline Context &joinDifferenceCounter(std::shared_ptr<Counter> counter)
         {
-            if (aeron_archive_persistent_subscription_context_set_join_difference_counter(
-                m_context_t, counter->c_counter()) < 0)
-            {
-                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
-            }
-
             m_joinDifferenceCounter = std::move(counter);
             return *this;
         }
@@ -344,12 +280,6 @@ public:
          */
         inline Context &liveLeftCounter(std::shared_ptr<Counter> counter)
         {
-            if (aeron_archive_persistent_subscription_context_set_live_left_counter(
-                m_context_t, counter->c_counter()) < 0)
-            {
-                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
-            }
-
             m_liveLeftCounter = std::move(counter);
             return *this;
         }
@@ -363,12 +293,6 @@ public:
          */
         inline Context &liveJoinedCounter(std::shared_ptr<Counter> counter)
         {
-            if (aeron_archive_persistent_subscription_context_set_live_joined_counter(
-                m_context_t, counter->c_counter()) < 0)
-            {
-                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
-            }
-
             m_liveJoinedCounter = std::move(counter);
             return *this;
         }
@@ -414,18 +338,121 @@ public:
         }
 
     private:
-        aeron_archive_persistent_subscription_context_t *m_context_t = nullptr;
-
+        std::shared_ptr<AeronArchive::Context_t> m_aeronArchiveContext;
         std::shared_ptr<Aeron> m_aeronW;
+        std::string m_aeronDirectoryName;
 
         std::function<void()> m_onLiveJoined;
         std::function<void()> m_onLiveLeft;
         std::function<void(int, const std::string &)> m_onError;
 
+        std::int64_t m_recordingId = -1;
+        std::int64_t m_startPosition = FROM_LIVE;
+        std::string m_liveChannel;
+        std::int32_t m_liveStreamId = -1;
+        std::string m_replayChannel;
+        std::int32_t m_replayStreamId = -1;
+
         std::shared_ptr<Counter> m_stateCounter;
         std::shared_ptr<Counter> m_joinDifferenceCounter;
         std::shared_ptr<Counter> m_liveLeftCounter;
         std::shared_ptr<Counter> m_liveJoinedCounter;
+
+        inline void initialiseContext(
+            aeron_archive_persistent_subscription_context_t *context,
+            const aeron_archive_persistent_subscription_listener_t &listener) const
+        {
+            if (nullptr == m_aeronArchiveContext)
+            {
+                throw IllegalArgumentException("archive context must be set", SOURCEINFO);
+            }
+
+            if (aeron_archive_persistent_subscription_context_set_archive_context(context,
+                m_aeronArchiveContext->m_aeron_archive_ctx_t) < 0)
+            {
+                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
+            }
+
+            if (nullptr != m_aeronW &&
+                aeron_archive_persistent_subscription_context_set_aeron(context, m_aeronW->aeron()) < 0)
+            {
+                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
+            }
+
+            if (aeron_archive_persistent_subscription_context_set_aeron_directory_name(context, m_aeronDirectoryName.c_str()) < 0)
+            {
+                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
+            }
+
+            if (aeron_archive_persistent_subscription_context_set_recording_id(context, m_recordingId) < 0)
+            {
+                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
+            }
+
+            if (aeron_archive_persistent_subscription_context_set_start_position(context, m_startPosition) < 0)
+            {
+                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
+            }
+
+            if (m_liveChannel.empty())
+            {
+                throw IllegalArgumentException("live channel must be set", SOURCEINFO);
+            }
+
+            if (aeron_archive_persistent_subscription_context_set_live_channel(context, m_liveChannel.c_str()) < 0)
+            {
+                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
+            }
+
+            if (aeron_archive_persistent_subscription_context_set_live_stream_id(context, m_liveStreamId) < 0)
+            {
+                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
+            }
+
+            if (m_replayChannel.empty())
+            {
+                throw IllegalArgumentException("replay channel must be set", SOURCEINFO);
+            }
+
+            if (aeron_archive_persistent_subscription_context_set_replay_channel(context, m_replayChannel.c_str()) < 0)
+            {
+                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
+            }
+
+            if (aeron_archive_persistent_subscription_context_set_replay_stream_id(context, m_replayStreamId) < 0)
+            {
+                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
+            }
+
+            if (nullptr != m_stateCounter && aeron_archive_persistent_subscription_context_set_state_counter(
+                    context, m_stateCounter->c_counter()) < 0)
+            {
+                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
+            }
+
+            if (nullptr != m_joinDifferenceCounter &&
+                aeron_archive_persistent_subscription_context_set_join_difference_counter(context, m_joinDifferenceCounter->c_counter()) < 0)
+            {
+                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
+            }
+
+            if (nullptr != m_liveLeftCounter && aeron_archive_persistent_subscription_context_set_live_left_counter(
+                context, m_liveLeftCounter->c_counter()) < 0)
+            {
+                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
+            }
+
+            if (nullptr != m_liveJoinedCounter && aeron_archive_persistent_subscription_context_set_live_joined_counter(
+                context, m_liveJoinedCounter->c_counter()) < 0)
+            {
+                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
+            }
+
+            if (aeron_archive_persistent_subscription_context_set_listener(context, &listener) < 0)
+            {
+                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
+            }
+        }
     };
 
     /**
@@ -450,32 +477,42 @@ public:
      * @return a shared_ptr to the new PersistentSubscription.
      * @throws ArchiveException if creation fails.
      */
-    static std::shared_ptr<PersistentSubscription> create(Context &ctx)
+    static std::shared_ptr<PersistentSubscription> create(const Context &ctx)
     {
-        std::shared_ptr<PersistentSubscription> subscription = std::shared_ptr<PersistentSubscription>(
-            new PersistentSubscription(ctx.m_onLiveJoined, ctx.m_onLiveLeft, ctx.m_onError));
+        std::shared_ptr<PersistentSubscription> subscription =
+            std::shared_ptr<PersistentSubscription>(new PersistentSubscription());
 
-        aeron_archive_persistent_subscription_listener_t listener = {};
-        listener.on_live_joined = onLiveJoinedFunc;
-        listener.on_live_left = onLiveLeftFunc;
-        listener.on_error = onErrorFunc;
-        listener.clientd = subscription.get();
-
-        if (aeron_archive_persistent_subscription_context_set_listener(
-            ctx.m_context_t, &listener) < 0)
+        aeron_archive_persistent_subscription_context_t *context;
+        if (aeron_archive_persistent_subscription_context_init(&context) < 0)
         {
             ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
         }
 
-        aeron_archive_persistent_subscription_t *persistentSubscription = nullptr;
-
-        if (aeron_archive_persistent_subscription_create(&persistentSubscription, ctx.m_context_t) < 0)
+        try
         {
-            ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
-        }
+            aeron_archive_persistent_subscription_listener_t listener = {};
+            listener.on_live_joined = onLiveJoinedFunc;
+            listener.on_live_left = onLiveLeftFunc;
+            listener.on_error = onErrorFunc;
+            listener.clientd = subscription.get();
 
-        subscription->m_persistent_subscription_t = persistentSubscription;
-        ctx.m_context_t = nullptr;
+            ctx.initialiseContext(context, listener);
+
+            aeron_archive_persistent_subscription_t *persistentSubscription = nullptr;
+
+            if (aeron_archive_persistent_subscription_create(&persistentSubscription, context) < 0)
+            {
+                ARCHIVE_MAP_ERRNO_TO_SOURCED_EXCEPTION_AND_THROW;
+            }
+
+            subscription->m_persistent_subscription_t = persistentSubscription;
+            subscription->m_context = ctx;
+        }
+        catch (...)
+        {
+            aeron_archive_persistent_subscription_context_close(context);
+            throw;
+        }
 
         return subscription;
     }
@@ -583,18 +620,9 @@ public:
 
 private:
     aeron_archive_persistent_subscription_t *m_persistent_subscription_t = nullptr;
+    Context m_context;
 
-    std::function<void()> m_onLiveJoined;
-    std::function<void()> m_onLiveLeft;
-    std::function<void(int, const std::string &)> m_onError;
-
-    PersistentSubscription(
-        std::function<void()> onLiveJoined,
-        std::function<void()> onLiveLeft,
-        std::function<void(int, const std::string &)> onError) :
-        m_onLiveJoined(std::move(onLiveJoined)),
-        m_onLiveLeft(std::move(onLiveLeft)),
-        m_onError(std::move(onError))
+    PersistentSubscription()
     {
     }
 
@@ -603,9 +631,10 @@ private:
         try
         {
             PersistentSubscription *self = reinterpret_cast<PersistentSubscription *>(clientd);
-            if (self->m_onLiveJoined)
+            Context &ctx = self->m_context;
+            if (ctx.m_onLiveJoined)
             {
-                self->m_onLiveJoined();
+                ctx.m_onLiveJoined();
             }
         }
         catch (const std::exception &ex)
@@ -619,9 +648,10 @@ private:
         try
         {
             PersistentSubscription *self = reinterpret_cast<PersistentSubscription *>(clientd);
-            if (self->m_onLiveLeft)
+            Context &ctx = self->m_context;
+            if (ctx.m_onLiveLeft)
             {
-                self->m_onLiveLeft();
+                ctx.m_onLiveLeft();
             }
         }
         catch (const std::exception &ex)
@@ -635,9 +665,10 @@ private:
         try
         {
             PersistentSubscription *self = reinterpret_cast<PersistentSubscription *>(clientd);
-            if (self->m_onError)
+            Context &ctx = self->m_context;
+            if (ctx.m_onError)
             {
-                self->m_onError(errcode, std::string(message));
+                ctx.m_onError(errcode, std::string(message));
             }
         }
         catch (const std::exception &ex)
