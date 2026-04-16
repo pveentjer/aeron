@@ -4120,14 +4120,6 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldRetryAndRecoverWhenArchiveI
 
     AeronResource aeron(aeron_dir);
 
-    int error_count = 0;
-    aeron_archive_persistent_subscription_listener_t listener = {};
-    listener.clientd = &error_count;
-    listener.on_error = [](void *clientd, int, const char *)
-    {
-        (*static_cast<int *>(clientd))++;
-    };
-
     aeron_archive_context_t *persistent_subscription_archive_ctx = createArchiveContext();
     aeron_archive_context_set_message_timeout_ns(persistent_subscription_archive_ctx, 1000000000ULL); // 1 second
 
@@ -4140,7 +4132,9 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldRetryAndRecoverWhenArchiveI
         "aeron:udp?endpoint=localhost:0",
         -5,
         AERON_PERSISTENT_SUBSCRIPTION_FROM_START);
-    aeron_archive_persistent_subscription_context_set_listener(context, &listener);
+
+    TestListener listener;
+    listener.attachTo(context);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -4159,7 +4153,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldRetryAndRecoverWhenArchiveI
     executeUntil(
         "has errors",
         poller,
-        [&] { return error_count > 1; });
+        [&] { return listener.error_count > 1; });
 
     // Restart the archive (preserving recordings)
     archive_process = std::make_unique<TestStandaloneArchive>(
