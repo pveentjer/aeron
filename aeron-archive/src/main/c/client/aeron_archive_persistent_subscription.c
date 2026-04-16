@@ -31,15 +31,15 @@
 #include "uri/aeron_uri_string_builder.h"
 #include "util/aeron_error.h"
 
-#define transition(persistent_subscription, new_state)                                                            \
-    do {                                                                                                          \
-        printf("-> " #new_state "\n");fflush(stdout);                                                             \
-        persistent_subscription->state = new_state;                                                               \
-        if (NULL != persistent_subscription->context->state_counter &&                                            \
-            !aeron_counter_is_closed(persistent_subscription->context->state_counter))                            \
-        {                                                                                                         \
-            aeron_counter_set_release(aeron_counter_addr(persistent_subscription->context->state_counter), new_state); \
-        }                                                                                                         \
+#define transition(persistent_subscription, new_state)                                    \
+    do {                                                                                  \
+        printf("-> " #new_state "\n");fflush(stdout);                                     \
+        persistent_subscription->state = new_state;                                       \
+        aeron_counter_t *state_counter = persistent_subscription->context->state_counter; \
+        if (!aeron_counter_is_closed(state_counter))                                      \
+        {                                                                                 \
+            aeron_counter_set_release(aeron_counter_addr(state_counter), new_state);      \
+        }                                                                                 \
     } while (0)
 
 struct aeron_archive_persistent_subscription_context_stct
