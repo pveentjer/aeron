@@ -3593,9 +3593,10 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldStayOnReplayWhenLiveCannotC
     AeronResource aeron(m_aeronDir);
 
     // Use an unreachable live channel
-    const std::string unreachable_live_channel = "aeron:udp?control=localhost:49582|control-mode=dynamic|fc=max";
+    const std::string unreachable_live_channel = "aeron:udp?control=localhost:49582|control-mode=dynamic";
 
     aeron_archive_context_t *archive_ctx = createArchiveContext();
+    aeron_archive_context_set_message_timeout_ns(archive_ctx, UINT64_C(500000000));
     aeron_archive_persistent_subscription_context_t *context = createPersistentSubscriptionContext(
         aeron.aeron(),
         archive_ctx,
@@ -3605,6 +3606,9 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldStayOnReplayWhenLiveCannotC
         "aeron:udp?endpoint=localhost:0",
         -5,
         AERON_PERSISTENT_SUBSCRIPTION_FROM_START);
+
+    TestListener listener;
+    listener.attachTo(context);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -3625,15 +3629,14 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldStayOnReplayWhenLiveCannotC
         [&] { return handler.messageCount() == payloads.size(); });
     ASSERT_TRUE(aeron_archive_persistent_subscription_is_replaying(persistent_subscription));
 
-    // Poll a few more times — should stay replaying since live is unreachable
-    for (int i = 0; i < 10; i++)
-    {
-        aeron_archive_persistent_subscription_controlled_poll(
-            persistent_subscription,
-            MessageCapturingFragmentHandler::onFragment,
-            &handler,
-            10);
-    }
+    // Poll a while longer — should stay replaying since live is unreachable
+    executeUntil(
+        "warns about no live image",
+        poller,
+        [&] { return listener.error_count > 0; });
+    ASSERT_EQ(
+        "No image became available on the live subscription within the message timeout.",
+        listener.last_error_message);
     ASSERT_TRUE(aeron_archive_persistent_subscription_is_replaying(persistent_subscription));
 
     // Publish more while still replaying
