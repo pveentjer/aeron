@@ -1006,7 +1006,7 @@ class ArchiveEventDissectorTest
         offset += SIZE_OF_INT;
         buffer.putInt(offset, 21);
         offset += SIZE_OF_INT;
-        buffer.putLong(offset, 10);
+        buffer.putLong(offset, 128);
 
         dissectPersistentSubscriptionJoinedLive(PERSISTENT_SUBSCRIPTION_JOINED_LIVE, buffer, 0, builder);
 
@@ -1017,7 +1017,7 @@ class ArchiveEventDissectorTest
                 " liveChannel=aeron:udp?endpoint=localhost:10010" +
                 " liveStreamId=11" +
                 " liveSessionId=21" +
-                " joinPosition=10",
+                " joinPosition=128",
             builder.toString());
     }
 }

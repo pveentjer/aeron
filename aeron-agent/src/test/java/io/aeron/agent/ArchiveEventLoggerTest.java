@@ -440,7 +440,7 @@ class ArchiveEventLoggerTest
         final String liveChannel = "aeron:udp?endpoint=localhost:10010";
         final int liveStreamId = 11;
         final int liveSessionId = 555;
-        final long joinPosition = 10L;
+        final long joinPosition = 128L;
         final int captureLength = SIZE_OF_LONG + replayChannel.length() + SIZE_OF_INT * 2 + liveChannel.length() +
             SIZE_OF_INT * 3 + SIZE_OF_LONG;
 

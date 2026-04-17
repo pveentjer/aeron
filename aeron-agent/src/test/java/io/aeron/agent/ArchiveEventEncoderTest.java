@@ -242,7 +242,7 @@ class ArchiveEventEncoderTest
     {
         final int offset = 24;
         final int liveSessionId = 21;
-        final long joinPosition = 10;
+        final long joinPosition = 128;
         final long recordingId = 16;
         final String replayChannel = "aeron:udp?endpoint=localhost:9010";
         final int replayStreamId = 10;
