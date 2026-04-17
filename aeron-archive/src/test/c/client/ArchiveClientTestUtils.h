@@ -85,6 +85,24 @@ public:
         return m_aeron;
     }
 
+    int64_t* findCounterByType(int32_t typeId) const
+    {
+        std::pair<int32_t, int32_t> ids{typeId, AERON_NULL_COUNTER_ID};
+        aeron_counters_reader_t *counters_reader = aeron_counters_reader(m_aeron);
+        aeron_counters_reader_foreach_counter(
+            counters_reader,
+            [](int64_t, int32_t id, int32_t type_id, const uint8_t*, size_t, const char*, size_t, void* clientd)
+            {
+                std::pair<int32_t, int32_t> *ids = static_cast<std::pair<int32_t, int32_t>*>(clientd);
+                if (type_id == ids->first)
+                {
+                    ids->second = id;
+                }
+            },
+            &ids);
+        return ids.second == AERON_NULL_COUNTER_ID ? nullptr : aeron_counters_reader_addr(counters_reader, ids.second);
+    }
+
 private:
     aeron_context_t *m_aeron_ctx = nullptr;
     aeron_t *m_aeron = nullptr;

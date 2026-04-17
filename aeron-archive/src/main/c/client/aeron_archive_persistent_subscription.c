@@ -40,6 +40,10 @@
         {                                                                                 \
             aeron_counter_set_release(aeron_counter_addr(state_counter), new_state);      \
         }                                                                                 \
+        if (new_state == FAILED)                                                          \
+        {                                                                                 \
+            aeron_archive_async_client_close(persistent_subscription->archive);           \
+        }                                                                                 \
     } while (0)
 
 struct aeron_archive_persistent_subscription_context_stct

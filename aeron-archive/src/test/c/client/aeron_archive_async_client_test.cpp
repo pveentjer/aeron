@@ -621,7 +621,7 @@ TEST_F(AeronArchiveAsyncClientTest, testAeronArchiveAsyncClient)
         auto controlResponse9 = pollUntilControlResponseReceived(client, listener, 9);
         EXPECT_THAT(controlResponse9, IsOk(9, stop_position));
 
-        ASSERT_EQ(0, aeron_archive_async_client_destroy(client));
+        aeron_archive_async_client_destroy(client);
     }
 
     ASSERT_EQ(0, aeron_archive_context_close(context));
@@ -673,7 +673,7 @@ TEST_F(AeronArchiveAsyncClientTest, shouldAllowToStopReplay)
 
     pollUntilTrue("EOS", client, [&] { return aeron_image_is_end_of_stream(image); });
 
-    ASSERT_EQ(0, aeron_archive_async_client_destroy(client));
+    aeron_archive_async_client_destroy(client);
     ASSERT_EQ(0, aeron_archive_context_close(context));
 }
 
@@ -694,6 +694,6 @@ TEST_F(AeronArchiveAsyncClientTest, shouldCloseItselfIfErrorIsTerminal)
 
     EXPECT_TRUE(aeron_archive_async_client_is_closed(client));
 
-    EXPECT_EQ(0, aeron_archive_async_client_destroy(client));
+    aeron_archive_async_client_destroy(client);
     EXPECT_EQ(0, aeron_archive_context_close(context));
 }

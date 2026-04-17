@@ -4863,3 +4863,49 @@ TEST_P(AeronArchivePersistentSubscriptionAllReplayChannelTypesTest, shouldCloseC
         aeron_archive_context_close(archive_ctx);
     }
 }
+
+TEST_F(AeronArchivePersistentSubscriptionTest, shouldCloseArchiveConnectionOnFailureInCaseApplicationKeepsPolling)
+{
+    TestArchive archive = createArchive(m_aeronDir);
+
+    PersistentPublication persistent_publication(m_aeronDir, IPC_CHANNEL, STREAM_ID);
+
+    AeronResource aeron(m_aeronDir);
+
+    aeron_archive_context_t* archive_ctx = createArchiveContext();
+    aeron_archive_persistent_subscription_context_t *context = createDefaultPersistentSubscriptionContext(
+        aeron.aeron(),
+        archive_ctx,
+        persistent_publication.recordingId());
+
+    aeron_archive_persistent_subscription_context_set_start_position(context, 8192);
+
+    aeron_archive_persistent_subscription_t *persistent_subscription;
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
+
+    MessageCapturingFragmentHandler handler;
+    auto poller = [&]
+    {
+        return aeron_archive_persistent_subscription_controlled_poll(
+            persistent_subscription,
+            MessageCapturingFragmentHandler::onFragment,
+            &handler,
+            1);
+    };
+
+    executeUntil(
+        "has failed",
+        poller,
+        [&] { return aeron_archive_persistent_subscription_has_failed(persistent_subscription); });
+
+    int64_t *session_counter = aeron.findCounterByType(AERON_COUNTER_ARCHIVE_CONTROL_SESSIONS_TYPE_ID);
+    ASSERT_NE(nullptr, session_counter);
+
+    executeUntil(
+        "archive connection gets closed",
+        poller,
+        [&] { return *session_counter == 1; });
+
+    ASSERT_EQ(0, aeron_archive_persistent_subscription_close(persistent_subscription)) << aeron_errmsg();
+    aeron_archive_context_close(archive_ctx);
+}

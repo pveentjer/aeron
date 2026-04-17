@@ -2464,7 +2464,7 @@ abstract class PersistentSubscriptionTest
 
     @Test
     @InterruptAfter(10)
-    void shouldCloseArchiveConnectionOnFailure()
+    void shouldCloseArchiveConnectionOnFailureInCaseApplicationKeepsPolling()
     {
         final PersistentPublication persistentPublication =
             PersistentPublication.create(aeronArchive, IPC_CHANNEL, STREAM_ID);
