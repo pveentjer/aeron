@@ -646,7 +646,7 @@ protected:
         {
             std::vector<uint8_t> *const message = &messages[i];
             const int length = m_lengthGenerator(m_randomEngine);
-            message->reserve(length);
+            message->reserve(std::max(1, length)); // at least 1 so that we don't pass a nullptr to offer
             for (int j = 0; j < length; j++)
             {
                 message->push_back(m_byteGenerator(m_randomEngine));
