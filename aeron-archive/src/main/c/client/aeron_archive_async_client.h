@@ -44,7 +44,9 @@ int aeron_archive_async_client_create(
     aeron_archive_context_t *context,
     aeron_archive_async_client_listener_t *listener);
 
-int aeron_archive_async_client_destroy(aeron_archive_async_client_t *client);
+void aeron_archive_async_client_close(aeron_archive_async_client_t *client);
+
+void aeron_archive_async_client_destroy(aeron_archive_async_client_t *client);
 
 int aeron_archive_async_client_poll(aeron_archive_async_client_t *client);
 

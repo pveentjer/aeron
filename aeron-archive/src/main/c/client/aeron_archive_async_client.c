@@ -100,25 +100,34 @@ cleanup:
     return -1;
 }
 
-int aeron_archive_async_client_destroy(aeron_archive_async_client_t *client)
+void aeron_archive_async_client_close(aeron_archive_async_client_t *client)
 {
     if (NULL != client)
     {
+        client->state = AERON_ARCHIVE_ASYNC_CLIENT_CLOSED;
+
         if (NULL != client->archive)
         {
             aeron_archive_close(client->archive);
+            client->archive = NULL;
         }
 
         if (NULL != client->async_connect)
         {
             aeron_archive_async_connect_delete(client->async_connect);
+            client->async_connect = NULL;
         }
+    }
+}
 
+void aeron_archive_async_client_destroy(aeron_archive_async_client_t *client)
+{
+    if (NULL != client)
+    {
+        aeron_archive_async_client_close(client);
         aeron_controlled_fragment_assembler_delete(client->fragment_assembler);
         aeron_free(client);
     }
-
-    return 0;
 }
 
 int aeron_archive_async_client_poll(aeron_archive_async_client_t *client)
@@ -146,7 +155,7 @@ static int aeron_archive_async_client_connecting(aeron_archive_async_client_t *c
 
         if (aeron_archive_async_connect(&client->async_connect, client->context) < 0)
         {
-            client->state = AERON_ARCHIVE_ASYNC_CLIENT_CLOSED;
+            aeron_archive_async_client_close(client);
             client->listener->on_error(client->listener->clientd, aeron_errcode(), aeron_errmsg());
             return 1;
         }
@@ -207,9 +216,7 @@ static int aeron_archive_async_client_connected(aeron_archive_async_client_t *cl
 
     if (0 < fragments && client->error_on_fragment)
     {
-        aeron_archive_close(client->archive);
-        client->archive = NULL;
-        client->state = AERON_ARCHIVE_ASYNC_CLIENT_CLOSED;
+        aeron_archive_async_client_close(client);
         client->listener->on_error(client->listener->clientd, aeron_errcode(), aeron_errmsg());
     }
 
