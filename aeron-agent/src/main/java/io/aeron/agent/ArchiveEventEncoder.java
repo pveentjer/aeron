@@ -123,7 +123,6 @@ final class ArchiveEventEncoder
         encodingBuffer.putInt(offset + encodedLength, liveStreamId, LITTLE_ENDIAN);
         encodedLength += SIZE_OF_INT;
 
-
         encodingBuffer.putInt(offset + encodedLength, liveSessionId, LITTLE_ENDIAN);
         encodedLength += SIZE_OF_INT;
 
