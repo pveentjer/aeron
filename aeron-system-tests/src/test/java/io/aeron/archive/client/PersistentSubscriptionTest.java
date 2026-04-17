@@ -1160,6 +1160,8 @@ abstract class PersistentSubscriptionTest
     @SuppressWarnings("methodlength")
     void canJoinLiveWhenLiveAndReplayAreAdvancing() throws Exception
     {
+        // This test can also be used to manually observe the impact a Persistent Subscription has on a control
+        // subscriber. Run with `-Daeron.test.system.persistentsubscription.printresults=true` to see results.
         final String pubChannel = "aeron:udp?term-length=16m|control=localhost:24325|control-mode=dynamic|fc=min";
         final String subChannel = "aeron:udp?control=localhost:24325|group=true";
 
@@ -1266,8 +1268,11 @@ abstract class PersistentSubscriptionTest
 
             interruptAndJoin(control);
 
-            printResults(t0, persistentSubscription, ratePerSecond, publisherMessagesPerSecond,
-                publisherBpePerSecond, controlMessagesPerSecond);
+            if (Boolean.getBoolean("aeron.test.system.persistentsubscription.printresults"))
+            {
+                printResults(t0, persistentSubscription, ratePerSecond, publisherMessagesPerSecond,
+                    publisherBpePerSecond, controlMessagesPerSecond);
+            }
 
             verify(persistentSubscription);
         }
