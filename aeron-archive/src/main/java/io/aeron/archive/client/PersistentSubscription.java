@@ -1256,6 +1256,10 @@ public final class PersistentSubscription implements AutoCloseable
             {
                 stateCounter.setRelease(state.code);
             }
+            if (newState == State.FAILED)
+            {
+                asyncAeronArchive.close();
+            }
         }
     }
 

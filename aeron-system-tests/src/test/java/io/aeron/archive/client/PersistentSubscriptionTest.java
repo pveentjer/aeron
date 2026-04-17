@@ -2464,6 +2464,27 @@ abstract class PersistentSubscriptionTest
 
     @Test
     @InterruptAfter(10)
+    void shouldCloseArchiveConnectionOnFailure()
+    {
+        final PersistentPublication persistentPublication =
+            PersistentPublication.create(aeronArchive, IPC_CHANNEL, STREAM_ID);
+
+        persistentSubscriptionCtx
+            .recordingId(persistentPublication.recordingId())
+            .startPosition(8192);
+
+        try (PersistentSubscription persistentSubscription = PersistentSubscription.create(persistentSubscriptionCtx))
+        {
+            executeUntil(persistentSubscription::hasFailed, () -> poll(persistentSubscription, fragmentHandler, 1));
+            executeUntil(
+                () -> archive.context().controlSessionsCounter().get() == 1,
+                () -> poll(persistentSubscription, fragmentHandler, 1),
+                () -> "controlSessionsCounter=" + archive.context().controlSessionsCounter().get());
+        }
+    }
+
+    @Test
+    @InterruptAfter(10)
     void shouldNotRequireEventListener()
     {
         final PersistentSubscriptionListenerImpl listener = null; // <-- null listener
