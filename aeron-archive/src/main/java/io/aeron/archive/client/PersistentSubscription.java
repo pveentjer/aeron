@@ -1553,6 +1553,13 @@ public final class PersistentSubscription implements AutoCloseable
         private Counter liveJoinedCounter = null;
 
         /**
+         * Construct a Context using default values.
+         */
+        public Context()
+        {
+        }
+
+        /**
          * Perform a shallow copy of the object.
          *
          * @return a shallow copy of the object.
