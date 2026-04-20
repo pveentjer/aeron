@@ -426,12 +426,10 @@ abstract class PersistentSubscriptionTest
             PersistentPublication.create(aeronArchive, IPC_CHANNEL, STREAM_ID);
 
         final int sizeRequiringFragmentation = persistentPublication.maxPayloadLength() + 1;
-        final byte[] payload0 = new byte[sizeRequiringFragmentation];
-        ThreadLocalRandom.current().nextBytes(payload0);
-        final byte[] payload1 = new byte[sizeRequiringFragmentation];
-        ThreadLocalRandom.current().nextBytes(payload1);
+        final List<byte[]> payload0 = generateFixedPayloads(1, sizeRequiringFragmentation);
+        final List<byte[]> payload1 = generateFixedPayloads(1, sizeRequiringFragmentation);
 
-        persistentPublication.persist(List.of(payload0));
+        persistentPublication.persist(payload0);
 
         persistentSubscriptionCtx
             .recordingId(persistentPublication.recordingId());
@@ -441,12 +439,12 @@ abstract class PersistentSubscriptionTest
             executeUntil(persistentSubscription::isLive,
                 () -> poll(persistentSubscription, fragmentHandler, 1));
 
-            persistentPublication.persist(List.of(payload1));
+            persistentPublication.persist(payload1);
 
             executeUntil(() -> fragmentHandler.hasReceivedPayloads(2),
                 () -> poll(persistentSubscription, fragmentHandler, 1));
 
-            assertPayloads(fragmentHandler.receivedPayloads, List.of(payload0, payload1));
+            assertPayloads(fragmentHandler.receivedPayloads, payload0, payload1);
         }
     }
 
@@ -2682,7 +2680,7 @@ abstract class PersistentSubscriptionTest
 
     private List<byte[]> generateFixedPayloads(final int count, final int size)
     {
-        final ThreadLocalRandom random = ThreadLocalRandom.current();
+        final Random random = randomWatcher.random();
         final List<byte[]> payloads = new ArrayList<>(count);
         for (int i = 0; i < count; i++)
         {
