@@ -40,7 +40,7 @@
         {                                                                                 \
             aeron_counter_set_release(aeron_counter_addr(state_counter), new_state);      \
         }                                                                                 \
-        if (new_state == FAILED)                                                          \
+        if (FAILED == new_state)                                                          \
         {                                                                                 \
             aeron_archive_async_client_close(persistent_subscription->archive);           \
         }                                                                                 \
@@ -94,7 +94,7 @@ static void async_archive_op_on_control_response(
 {
     op->relevant_id = relevant_id;
     op->code = code;
-    strncpy(op->error_message, error_message != NULL ? error_message : "", AERON_ERROR_MAX_TOTAL_LENGTH - 1);
+    strncpy(op->error_message, NULL != error_message ? error_message : "", AERON_ERROR_MAX_TOTAL_LENGTH - 1);
     op->error_message[AERON_ERROR_MAX_TOTAL_LENGTH - 1] = '\0';
     op->response_received = true;
 }
@@ -890,16 +890,16 @@ static void on_archive_disconnected(void *clientd)
     aeron_archive_persistent_subscription_t *persistent_subscription = clientd;
 
     aeron_archive_persistent_subscription_state_t state = persistent_subscription->state;
-    if (state == AWAIT_ARCHIVE_CONNECTION ||
-        state == ATTEMPT_SWITCH ||
-        state == LIVE ||
-        state == FAILED)
+    if (AWAIT_ARCHIVE_CONNECTION == state ||
+        ATTEMPT_SWITCH == state ||
+        LIVE == state ||
+        FAILED== state )
     {
         return;
     }
 
     aeron_image_t *replay_image = persistent_subscription->replay_image;
-    if (replay_image != NULL)
+    if (NULL != replay_image)
     {
         persistent_subscription->position = aeron_image_position(replay_image);
     }
@@ -1096,14 +1096,14 @@ int aeron_archive_persistent_subscription_create(
         const char *endpoint = aeron_uri_string_builder_get(&builder, AERON_UDP_CHANNEL_ENDPOINT_KEY);
         const char *control_mode = aeron_uri_string_builder_get(&builder, AERON_UDP_CHANNEL_CONTROL_MODE_KEY);
 
-        _persistent_subscription->replay_channel_is_ipc = media != NULL && strcmp(media, "ipc") == 0;
+        _persistent_subscription->replay_channel_is_ipc = NULL != media && strcmp(media, "ipc") == 0;
 
-        if (control_mode != NULL && strcmp(control_mode, AERON_UDP_CHANNEL_CONTROL_MODE_RESPONSE_VALUE) == 0)
+        if (NULL != control_mode && strcmp(control_mode, AERON_UDP_CHANNEL_CONTROL_MODE_RESPONSE_VALUE) == 0)
         {
             _persistent_subscription->replay_channel_type = REPLAY_CHANNEL_RESPONSE_CHANNEL;
         }
-        else if (media != NULL && strcmp(media, "udp") == 0 &&
-            endpoint != NULL && strlen(endpoint) >= 2 &&
+        else if (NULL != media && strcmp(media, "udp") == 0 &&
+            NULL != endpoint && strlen(endpoint) >= 2 &&
             strcmp(endpoint + strlen(endpoint) - 2, ":0") == 0)
         {
             _persistent_subscription->replay_channel_type = REPLAY_CHANNEL_DYNAMIC_PORT;
@@ -2272,18 +2272,18 @@ int aeron_archive_persistent_subscription_controlled_poll(
 
 bool aeron_archive_persistent_subscription_is_live(aeron_archive_persistent_subscription_t *persistent_subscription)
 {
-    return persistent_subscription->state == LIVE;
+    return LIVE == persistent_subscription->state;
 }
 
 bool aeron_archive_persistent_subscription_is_replaying(aeron_archive_persistent_subscription_t *persistent_subscription)
 {
-    return persistent_subscription->state == REPLAY ||
-           persistent_subscription->state == ATTEMPT_SWITCH;
+    return REPLAY == persistent_subscription->state ||
+           ATTEMPT_SWITCH == persistent_subscription->state;
 }
 
 bool aeron_archive_persistent_subscription_has_failed(aeron_archive_persistent_subscription_t *persistent_subscription)
 {
-    return persistent_subscription->state == FAILED;
+    return FAILED == persistent_subscription->state;
 }
 
 int64_t aeron_archive_persistent_subscription_join_difference(aeron_archive_persistent_subscription_t *persistent_subscription)
