@@ -26,6 +26,8 @@ import io.aeron.logbuffer.Header;
 import org.agrona.CloseHelper;
 import org.agrona.DirectBuffer;
 
+import static io.aeron.archive.client.ControlResponsePoller.FRAGMENT_LIMIT;
+
 final class AsyncAeronArchive implements AutoCloseable
 {
     private final ControlledFragmentAssembler fragmentAssembler = new ControlledFragmentAssembler(this::onFragment);
@@ -236,7 +238,7 @@ final class AsyncAeronArchive implements AutoCloseable
             return 1;
         }
 
-        return subscription.controlledPoll(fragmentAssembler, 10);
+        return subscription.controlledPoll(fragmentAssembler, FRAGMENT_LIMIT);
     }
 
     private int disconnected()
