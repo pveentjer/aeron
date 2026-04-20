@@ -1399,7 +1399,7 @@ static int send_replay_request(aeron_archive_persistent_subscription_t *persiste
     return 1;
 }
 
-static int await_replay_response(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_await_replay_response(aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     if (!persistent_subscription->replay_request.response_received)
     {
@@ -1485,7 +1485,7 @@ static int await_replay_response(aeron_archive_persistent_subscription_t *persis
     return 1;
 }
 
-static int add_replay_subscription(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_add_replay_subscription(aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     // Dynamic port: use the raw context channel (with :0) so the OS assigns a free port.
     // Session-specific: use replay_channel_uri which now has the session id injected.
@@ -1515,7 +1515,7 @@ static int add_replay_subscription(aeron_archive_persistent_subscription_t *pers
     return 1;
 }
 
-static int await_replay_subscription(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_await_replay_subscription(aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     if (aeron_async_add_subscription_poll(
         &persistent_subscription->replay_subscription,
@@ -1573,7 +1573,7 @@ static int await_replay_subscription(aeron_archive_persistent_subscription_t *pe
     return 1;
 }
 
-static int await_replay_channel_endpoint(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_await_replay_channel_endpoint(aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     if (aeron_subscription_try_resolve_channel_endpoint_port(
         persistent_subscription->replay_subscription,
@@ -1589,7 +1589,7 @@ static int await_replay_channel_endpoint(aeron_archive_persistent_subscription_t
     return 1;
 }
 
-static int add_request_publication(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_add_request_publication(aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     char *control_request_channel = persistent_subscription->context->archive_context->control_request_channel;
     int32_t stream_id = persistent_subscription->context->archive_context->control_request_stream_id;
@@ -1636,7 +1636,7 @@ error:
     return 1;
 }
 
-static int await_request_publication(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_await_request_publication(aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     int result = aeron_async_add_exclusive_publication_poll(
         &persistent_subscription->request_publication,
@@ -1689,7 +1689,7 @@ static int await_request_publication(aeron_archive_persistent_subscription_t *pe
     return 1;
 }
 
-static int send_replay_token_request(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_send_replay_token_request(aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     int64_t correlation_id = aeron_next_correlation_id(persistent_subscription->context->aeron);
 
@@ -1719,7 +1719,7 @@ static int send_replay_token_request(aeron_archive_persistent_subscription_t *pe
     return 1;
 }
 
-static int await_replay_token(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_await_replay_token(aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     if (!persistent_subscription->replay_token_request.response_received)
     {
@@ -1779,7 +1779,7 @@ static int await_replay_token(aeron_archive_persistent_subscription_t *persisten
     return 1;
 }
 
-static bool do_add_live_subscription(aeron_archive_persistent_subscription_t *persistent_subscription)
+static bool aeron_archive_persistent_subscription_do_add_live_subscription(aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     persistent_subscription->live_image = NULL;
     persistent_subscription->live_subscription = NULL;
@@ -1804,7 +1804,7 @@ static bool do_add_live_subscription(aeron_archive_persistent_subscription_t *pe
     return true;
 }
 
-static int do_poll(
+static int aeron_archive_persistent_subscription_do_poll(
     aeron_archive_persistent_subscription_t *persistent_subscription,
     aeron_image_t *image,
     struct poll_ctx *poll_ctx)
@@ -1831,7 +1831,7 @@ static int do_poll(
     }
 }
 
-static int replay(aeron_archive_persistent_subscription_t *persistent_subscription, struct poll_ctx *poll_ctx)
+static int aeron_archive_persistent_subscription_replay(aeron_archive_persistent_subscription_t *persistent_subscription, struct poll_ctx *poll_ctx)
 {
     aeron_image_t *image = persistent_subscription->replay_image;
 
@@ -1924,7 +1924,7 @@ static int replay(aeron_archive_persistent_subscription_t *persistent_subscripti
         }
     }
 
-    int fragments = do_poll(persistent_subscription, image, poll_ctx);
+    int fragments = aeron_archive_persistent_subscription_do_poll(persistent_subscription, image, poll_ctx);
 
     persistent_subscription->position = aeron_image_position(image);
 
@@ -1932,7 +1932,7 @@ static int replay(aeron_archive_persistent_subscription_t *persistent_subscripti
         NULL == persistent_subscription->live_subscription &&
         max_recorded_position_is_caught_up(persistent_subscription, persistent_subscription->position))
     {
-        if (!do_add_live_subscription(persistent_subscription))
+        if (!aeron_archive_persistent_subscription_do_add_live_subscription(persistent_subscription))
         {
             clean_up_replay(persistent_subscription);
             clean_up_replay_subscription(persistent_subscription);
@@ -1943,7 +1943,7 @@ static int replay(aeron_archive_persistent_subscription_t *persistent_subscripti
     return fragments;
 }
 
-static aeron_controlled_fragment_handler_action_t live_catchup_fragment_handler(
+static aeron_controlled_fragment_handler_action_t aeron_archive_persistent_subscription_live_catchup_fragment_handler(
     void *clientd,
     const uint8_t *buffer,
     size_t length,
@@ -1960,7 +1960,7 @@ static aeron_controlled_fragment_handler_action_t live_catchup_fragment_handler(
     return AERON_ACTION_ABORT;
 }
 
-static aeron_controlled_fragment_handler_action_t replay_catchup_controlled_fragment_handler(
+static aeron_controlled_fragment_handler_action_t aeron_archive_persistent_subscription_replay_catchup_controlled_fragment_handler(
     void *clientd,
     const uint8_t *buffer,
     size_t length,
@@ -1980,7 +1980,7 @@ static aeron_controlled_fragment_handler_action_t replay_catchup_controlled_frag
         header);
 }
 
-static aeron_controlled_fragment_handler_action_t replay_catchup_uncontrolled_fragment_handler(
+static aeron_controlled_fragment_handler_action_t aeron_archive_persistent_subscription_replay_catchup_uncontrolled_fragment_handler(
     void *clientd,
     const uint8_t *buffer,
     size_t length,
@@ -2001,7 +2001,7 @@ static aeron_controlled_fragment_handler_action_t replay_catchup_uncontrolled_fr
     return AERON_ACTION_CONTINUE;
 }
 
-static int attempt_switch(aeron_archive_persistent_subscription_t *persistent_subscription, struct poll_ctx *poll_ctx)
+static int aeron_archive_persistent_subscription_attempt_switch(aeron_archive_persistent_subscription_t *persistent_subscription, struct poll_ctx *poll_ctx)
 {
     int fragments = 0;
 
@@ -2045,7 +2045,7 @@ static int attempt_switch(aeron_archive_persistent_subscription_t *persistent_su
 
         fragments += aeron_image_controlled_poll(
             live_image,
-            live_catchup_fragment_handler,
+            aeron_archive_persistent_subscription_live_catchup_fragment_handler,
             persistent_subscription,
             poll_ctx->fragment_limit);
 
@@ -2062,7 +2062,9 @@ static int attempt_switch(aeron_archive_persistent_subscription_t *persistent_su
 
         fragments += aeron_image_controlled_poll(
             replay_image,
-            poll_ctx->controlled ? replay_catchup_controlled_fragment_handler : replay_catchup_uncontrolled_fragment_handler,
+            poll_ctx->controlled
+            ? aeron_archive_persistent_subscription_replay_catchup_controlled_fragment_handler
+            : aeron_archive_persistent_subscription_replay_catchup_uncontrolled_fragment_handler,
             persistent_subscription,
             poll_ctx->fragment_limit);
     }
@@ -2077,9 +2079,9 @@ static int attempt_switch(aeron_archive_persistent_subscription_t *persistent_su
     return fragments;
 }
 
-static int add_live_subscription(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_add_live_subscription(aeron_archive_persistent_subscription_t *persistent_subscription)
 {
-    if (do_add_live_subscription(persistent_subscription))
+    if (aeron_archive_persistent_subscription_do_add_live_subscription(persistent_subscription))
     {
         transition(persistent_subscription, AWAIT_LIVE);
     }
@@ -2087,7 +2089,7 @@ static int add_live_subscription(aeron_archive_persistent_subscription_t *persis
     return 1;
 }
 
-static int await_live(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_await_live(aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     // awaiting live subscription or its image before going directly to live (no replay or switch)
 
@@ -2151,11 +2153,11 @@ static int await_live(aeron_archive_persistent_subscription_t *persistent_subscr
     return 0;
 }
 
-static int live(aeron_archive_persistent_subscription_t *persistent_subscription, struct poll_ctx *poll_ctx)
+static int aeron_archive_persistent_subscription_live(aeron_archive_persistent_subscription_t *persistent_subscription, struct poll_ctx *poll_ctx)
 {
     aeron_image_t *image = persistent_subscription->live_image;
 
-    int fragments = do_poll(persistent_subscription, image, poll_ctx);
+    int fragments = aeron_archive_persistent_subscription_do_poll(persistent_subscription, image, poll_ctx);
 
     if (fragments == 0 && aeron_image_is_closed(image))
     {
@@ -2170,7 +2172,7 @@ static int live(aeron_archive_persistent_subscription_t *persistent_subscription
     return fragments;
 }
 
-static int do_work(aeron_archive_persistent_subscription_t *persistent_subscription, struct poll_ctx *poll_ctx)
+static int aeron_archive_persistent_subscription_do_work(aeron_archive_persistent_subscription_t *persistent_subscription, struct poll_ctx *poll_ctx)
 {
     int work_count = aeron_archive_async_client_poll(persistent_subscription->archive);
 
@@ -2189,43 +2191,43 @@ static int do_work(aeron_archive_persistent_subscription_t *persistent_subscript
             work_count += send_replay_request(persistent_subscription);
             break;
         case AWAIT_REPLAY_RESPONSE:
-            work_count += await_replay_response(persistent_subscription);
+            work_count += aeron_archive_persistent_subscription_await_replay_response(persistent_subscription);
             break;
         case ADD_REPLAY_SUBSCRIPTION:
-            work_count += add_replay_subscription(persistent_subscription);
+            work_count += aeron_archive_persistent_subscription_add_replay_subscription(persistent_subscription);
             break;
         case AWAIT_REPLAY_SUBSCRIPTION:
-            work_count += await_replay_subscription(persistent_subscription);
+            work_count += aeron_archive_persistent_subscription_await_replay_subscription(persistent_subscription);
             break;
         case AWAIT_REPLAY_CHANNEL_ENDPOINT:
-            work_count += await_replay_channel_endpoint(persistent_subscription);
+            work_count += aeron_archive_persistent_subscription_await_replay_channel_endpoint(persistent_subscription);
             break;
         case ADD_REQUEST_PUBLICATION:
-            work_count += add_request_publication(persistent_subscription);
+            work_count += aeron_archive_persistent_subscription_add_request_publication(persistent_subscription);
             break;
         case AWAIT_REQUEST_PUBLICATION:
-            work_count += await_request_publication(persistent_subscription);
+            work_count += aeron_archive_persistent_subscription_await_request_publication(persistent_subscription);
             break;
         case SEND_REPLAY_TOKEN_REQUEST:
-            work_count += send_replay_token_request(persistent_subscription);
+            work_count += aeron_archive_persistent_subscription_send_replay_token_request(persistent_subscription);
             break;
         case AWAIT_REPLAY_TOKEN:
-            work_count += await_replay_token(persistent_subscription);
+            work_count += aeron_archive_persistent_subscription_await_replay_token(persistent_subscription);
             break;
         case REPLAY:
-            work_count += replay(persistent_subscription, poll_ctx);
+            work_count += aeron_archive_persistent_subscription_replay(persistent_subscription, poll_ctx);
             break;
         case ATTEMPT_SWITCH:
-            work_count += attempt_switch(persistent_subscription, poll_ctx);
+            work_count += aeron_archive_persistent_subscription_attempt_switch(persistent_subscription, poll_ctx);
             break;
         case ADD_LIVE_SUBSCRIPTION:
-            work_count += add_live_subscription(persistent_subscription);
+            work_count += aeron_archive_persistent_subscription_add_live_subscription(persistent_subscription);
             break;
         case AWAIT_LIVE:
-            work_count += await_live(persistent_subscription);
+            work_count += aeron_archive_persistent_subscription_await_live(persistent_subscription);
             break;
         case LIVE:
-            work_count += live(persistent_subscription, poll_ctx);
+            work_count += aeron_archive_persistent_subscription_live(persistent_subscription, poll_ctx);
             break;
         case FAILED:
             break;
@@ -2248,7 +2250,7 @@ int aeron_archive_persistent_subscription_poll(
             .fragment_limit = fragment_limit,
         };
 
-    return do_work(persistent_subscription, &poll_ctx);
+    return aeron_archive_persistent_subscription_do_work(persistent_subscription, &poll_ctx);
 }
 
 int aeron_archive_persistent_subscription_controlled_poll(
@@ -2265,7 +2267,7 @@ int aeron_archive_persistent_subscription_controlled_poll(
             .fragment_limit = fragment_limit,
         };
 
-    return do_work(persistent_subscription, &poll_ctx);
+    return aeron_archive_persistent_subscription_do_work(persistent_subscription, &poll_ctx);
 }
 
 bool aeron_archive_persistent_subscription_is_live(aeron_archive_persistent_subscription_t *persistent_subscription)
