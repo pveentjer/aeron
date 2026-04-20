@@ -269,7 +269,7 @@ public final class PersistentSubscription implements AutoCloseable
      */
     public boolean isLive()
     {
-        return state == State.LIVE;
+        return State.LIVE == state;
     }
 
     /**
@@ -279,7 +279,7 @@ public final class PersistentSubscription implements AutoCloseable
      */
     public boolean isReplaying()
     {
-        return state == State.REPLAY || state == State.ATTEMPT_SWITCH;
+        return State.REPLAY == state || State.ATTEMPT_SWITCH == state;
     }
 
     /**
@@ -293,7 +293,7 @@ public final class PersistentSubscription implements AutoCloseable
      */
     public boolean hasFailed()
     {
-        return state == State.FAILED;
+        return State.FAILED == state;
     }
 
     /**
