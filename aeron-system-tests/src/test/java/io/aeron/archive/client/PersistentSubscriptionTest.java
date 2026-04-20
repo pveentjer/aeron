@@ -110,6 +110,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
@@ -545,6 +546,7 @@ abstract class PersistentSubscriptionTest
                 Reason.INVALID_START_POSITION,
                 ((PersistentSubscriptionException)listener.lastException).reason()
             );
+            assertEquals(listener.lastException, persistentSubscription.failureReason());
         }
     }
 
@@ -574,6 +576,7 @@ abstract class PersistentSubscriptionTest
                 Reason.INVALID_START_POSITION,
                 ((PersistentSubscriptionException)listener.lastException).reason()
             );
+            assertEquals(listener.lastException, persistentSubscription.failureReason());
         }
     }
 
@@ -600,6 +603,7 @@ abstract class PersistentSubscriptionTest
 
             assertEquals(1, listener.errorCount);
             assertEquals(PersistentSubscriptionException.class, listener.lastException.getClass());
+            assertEquals(listener.lastException, persistentSubscription.failureReason());
         }
     }
 
@@ -625,6 +629,7 @@ abstract class PersistentSubscriptionTest
                 () -> poll(persistentSubscription, fragmentHandler, 1));
             assertEquals(1, listener.errorCount);
             assertEquals(PersistentSubscriptionException.class, listener.lastException.getClass());
+            assertEquals(listener.lastException, persistentSubscription.failureReason());
         }
     }
 
@@ -757,6 +762,8 @@ abstract class PersistentSubscriptionTest
                 listener.lastException.getMessage(),
                 containsString("No image became available on the live subscription")
             );
+            assertFalse(persistentSubscription.hasFailed());
+            assertNull(persistentSubscription.failureReason());
             assertFalse(persistentSubscription.isLive());
 
             // Restart the publication and ensure we join live and can consume messages.
@@ -880,6 +887,8 @@ abstract class PersistentSubscriptionTest
                 () -> listener.errorCount > 1,
                 () -> poll(persistentSubscription, fragmentHandler, 1));
             assertEquals(TimeoutException.class, listener.lastException.getClass());
+            assertFalse(persistentSubscription.hasFailed());
+            assertNull(persistentSubscription.failureReason());
             addCloseable(Archive.launch(localArchiveCtxTpl.clone()));
             executeUntil(
                 persistentSubscription::isLive,
@@ -945,6 +954,7 @@ abstract class PersistentSubscriptionTest
                 Reason.INVALID_START_POSITION,
                 ((PersistentSubscriptionException)listener.lastException).reason()
             );
+            assertEquals(listener.lastException, persistentSubscription.failureReason());
         }
     }
 
@@ -1431,6 +1441,8 @@ abstract class PersistentSubscriptionTest
                 listener.lastException.getMessage(),
                 containsString("No image became available on the live subscription")
             );
+            assertFalse(persistentSubscription.hasFailed());
+            assertNull(persistentSubscription.failureReason());
 
             // Restart the live publication
             final PersistentPublication resumedPublication = PersistentPublication.resume(
@@ -1500,6 +1512,7 @@ abstract class PersistentSubscriptionTest
             assertThat(listener.lastException.getMessage(), containsString(
                 "ERROR - replay request failed")
             );
+            assertEquals(listener.lastException, persistentSubscription.failureReason());
             verify(persistentSubscription);
         }
     }
@@ -1540,6 +1553,8 @@ abstract class PersistentSubscriptionTest
                 listener.lastException.getMessage(),
                 containsString("No image became available on the live subscription")
             );
+            assertFalse(persistentSubscription.hasFailed());
+            assertNull(persistentSubscription.failureReason());
 
             assertTrue(persistentSubscription.isReplaying());
 
@@ -1784,6 +1799,7 @@ abstract class PersistentSubscriptionTest
                 () -> poll(persistentSubscription, fragmentHandler, 10)
             );
             assertEquals(PersistentSubscriptionException.class, listener.lastException.getClass());
+            assertEquals(listener.lastException, persistentSubscription.failureReason());
             assertThat(
                 listener.lastException.getMessage(),
                 containsString("ERROR - replay request failed: requested replay start position=")
@@ -1856,6 +1872,7 @@ abstract class PersistentSubscriptionTest
                 description(persistentSubscription, fragmentHandler, listener)
             );
             assertEquals(PersistentSubscriptionException.class, listener.lastException.getClass());
+            assertEquals(listener.lastException, persistentSubscription.failureReason());
             assertThat(
                 listener.lastException.getMessage(),
                 containsString("unknown recording id:")
@@ -2215,6 +2232,7 @@ abstract class PersistentSubscriptionTest
                 Reason.RECORDING_NOT_FOUND,
                 ((PersistentSubscriptionException)listener.lastException).reason()
             );
+            assertEquals(listener.lastException, persistentSubscription.failureReason());
         }
     }
 
@@ -2240,6 +2258,7 @@ abstract class PersistentSubscriptionTest
                 Reason.STREAM_ID_MISMATCH,
                 ((PersistentSubscriptionException)listener.lastException).reason()
             );
+            assertEquals(listener.lastException, persistentSubscription.failureReason());
         }
     }
 
@@ -2281,6 +2300,7 @@ abstract class PersistentSubscriptionTest
                 () -> poll(persistentSubscription, fragmentHandler, 1));
             assertEquals(PersistentSubscriptionException.class, listener.lastException.getClass());
             assertTrue(persistentSubscription.hasFailed());
+            assertEquals(listener.lastException, persistentSubscription.failureReason());
         }
     }
 

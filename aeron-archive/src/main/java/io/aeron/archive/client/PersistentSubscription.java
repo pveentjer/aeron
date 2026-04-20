@@ -139,6 +139,7 @@ public final class PersistentSubscription implements AutoCloseable
     private long joinDifference;
     private long nextLivePosition = Aeron.NULL_VALUE;
     private long position;
+    private Exception failureReason = null;
 
     private PersistentSubscription(final Context ctx)
     {
@@ -289,11 +290,24 @@ public final class PersistentSubscription implements AutoCloseable
      * that can cause the persistent subscription to fail.
      *
      * @return true if persistent subscription has failed.
+     * @see PersistentSubscription#failureReason()
      * @see PersistentSubscriptionListener#onError(Exception)
      */
     public boolean hasFailed()
     {
         return State.FAILED == state;
+    }
+
+    /**
+     * The terminal error that caused the persistent subscription to fail.
+     * Only meaningful when {@link #hasFailed()} returns {@code true}.
+     *
+     * @return exception indicating the failure reason, or {@code null} if not in the failed state.
+     * @see PersistentSubscription#hasFailed()
+     */
+    public Exception failureReason()
+    {
+        return this.failureReason;
     }
 
     /**
@@ -427,8 +441,7 @@ public final class PersistentSubscription implements AutoCloseable
         if (error != null)
         {
             state(State.FAILED);
-
-            listener.onError(error);
+            onTerminalError(error);
         }
         else
         {
@@ -670,7 +683,7 @@ public final class PersistentSubscription implements AutoCloseable
                 default -> PersistentSubscriptionException.Reason.GENERIC;
             };
 
-            listener.onError(new PersistentSubscriptionException(
+            onTerminalError(new PersistentSubscriptionException(
                 reason, "ERROR - replay request failed: " + replayRequest.errorMessage));
 
             return 1;
@@ -740,13 +753,13 @@ public final class PersistentSubscription implements AutoCloseable
             if (e.errorCode() == ErrorCode.RESOURCE_TEMPORARILY_UNAVAILABLE)
             {
                 setUpReplay();
+                listener.onError(e);
             }
             else
             {
                 state(State.FAILED);
+                onTerminalError(e);
             }
-
-            listener.onError(e);
 
             return 1;
         }
@@ -823,13 +836,13 @@ public final class PersistentSubscription implements AutoCloseable
             if (e.errorCode() == ErrorCode.RESOURCE_TEMPORARILY_UNAVAILABLE)
             {
                 setUpReplay();
+                listener.onError(e);
             }
             else
             {
                 state(State.FAILED);
+                onTerminalError(e);
             }
-
-            listener.onError(e);
 
             return 1;
         }
@@ -907,7 +920,7 @@ public final class PersistentSubscription implements AutoCloseable
             cleanUpRequestPublication();
             cleanUpReplaySubscription();
 
-            listener.onError(new ArchiveException(
+            onTerminalError(new ArchiveException(
                 "replay token request failed: " + replayTokenRequest.errorMessage,
                 (int)replayTokenRequest.relevantId,
                 replayTokenRequest.correlationId));
@@ -985,10 +998,12 @@ public final class PersistentSubscription implements AutoCloseable
                     cleanUpReplay();
                     cleanUpReplaySubscription();
                     state(State.FAILED);
+                    onTerminalError(e);
                 }
-
-                listener.onError(e);
-
+                else
+                {
+                    listener.onError(e);
+                }
                 return 1;
             }
         }
@@ -1110,6 +1125,16 @@ public final class PersistentSubscription implements AutoCloseable
         return fragments;
     }
 
+    private void onTerminalError(final Exception error)
+    {
+        if (state != State.FAILED)
+        {
+            throw new RuntimeException("BOOM");
+        }
+        failureReason = error;
+        listener.onError(error);
+    }
+
     private ControlledFragmentHandler.Action onLiveCatchupFragment(
         final DirectBuffer buffer,
         final int offset,
@@ -1197,13 +1222,13 @@ public final class PersistentSubscription implements AutoCloseable
                 if (e.errorCode() == ErrorCode.RESOURCE_TEMPORARILY_UNAVAILABLE)
                 {
                     state(State.ADD_LIVE_SUBSCRIPTION);
+                    listener.onError(e);
                 }
                 else
                 {
                     state(State.FAILED);
+                    onTerminalError(e);
                 }
-
-                listener.onError(e);
 
                 return 1;
             }
@@ -2146,8 +2171,8 @@ public final class PersistentSubscription implements AutoCloseable
                     final ArchiveException archiveException = new ArchiveException(
                         "get max position request failed code=" + code + " relevantId=" + relevantId +
                         " errorMessage='" + errorMessage + "'");
-                    listener.onError(archiveException);
                     state(State.FAILED);
+                    onTerminalError(archiveException);
                 }
             }
             else
@@ -2239,8 +2264,12 @@ public final class PersistentSubscription implements AutoCloseable
             if (asyncAeronArchive.isClosed())
             {
                 state(State.FAILED);
+                onTerminalError(error);
             }
-            listener.onError(error);
+            else
+            {
+                listener.onError(error);
+            }
         }
 
         public void onRecordingDescriptor(
