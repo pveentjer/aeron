@@ -1157,7 +1157,13 @@ public final class PersistentSubscription implements AutoCloseable
         final int length,
         final Header header)
     {
-        return onReplayCatchupFragment(buffer, offset, length, header, true);
+        final long currentReplayPosition = header.position();
+        if (currentReplayPosition == nextLivePosition)
+        {
+            state(State.LIVE);
+            return ControlledFragmentHandler.Action.ABORT;
+        }
+        return controlledFragmentAssembler.onFragment(buffer, offset, length, header);
     }
 
     private ControlledFragmentHandler.Action onReplayCatchupFragmentUncontrolled(
@@ -1166,25 +1172,11 @@ public final class PersistentSubscription implements AutoCloseable
         final int length,
         final Header header)
     {
-        return onReplayCatchupFragment(buffer, offset, length, header, false);
-    }
-
-    private ControlledFragmentHandler.Action onReplayCatchupFragment(
-        final DirectBuffer buffer,
-        final int offset,
-        final int length,
-        final Header header,
-        final boolean isControlled)
-    {
         final long currentReplayPosition = header.position();
         if (currentReplayPosition == nextLivePosition)
         {
             state(State.LIVE);
             return ControlledFragmentHandler.Action.ABORT;
-        }
-        if (isControlled)
-        {
-            return controlledFragmentAssembler.onFragment(buffer, offset, length, header);
         }
         uncontrolledFragmentAssembler.onFragment(buffer, offset, length, header);
         return ControlledFragmentHandler.Action.CONTINUE;
