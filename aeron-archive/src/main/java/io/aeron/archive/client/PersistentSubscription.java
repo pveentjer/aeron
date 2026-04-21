@@ -234,7 +234,7 @@ public final class PersistentSubscription implements AutoCloseable
         }
     }
 
-    private int doWork(final int fragmentLimit, final boolean controlled)
+    private int doWork(final int fragmentLimit, final boolean isControlled)
     {
         int workCount = asyncAeronArchive.poll();
 
@@ -252,11 +252,11 @@ public final class PersistentSubscription implements AutoCloseable
             case AWAIT_REQUEST_PUBLICATION -> awaitRequestPublication();
             case SEND_REPLAY_TOKEN_REQUEST -> sendReplayTokenRequest();
             case AWAIT_REPLAY_TOKEN -> awaitReplayToken();
-            case REPLAY -> replay(fragmentLimit, controlled);
-            case ATTEMPT_SWITCH -> attemptSwitch(fragmentLimit, controlled);
+            case REPLAY -> replay(fragmentLimit, isControlled);
+            case ATTEMPT_SWITCH -> attemptSwitch(fragmentLimit, isControlled);
             case ADD_LIVE_SUBSCRIPTION -> addLiveSubscription();
             case AWAIT_LIVE -> awaitLive();
-            case LIVE -> live(fragmentLimit, controlled);
+            case LIVE -> live(fragmentLimit, isControlled);
             case FAILED -> 0;
         };
 
@@ -941,7 +941,7 @@ public final class PersistentSubscription implements AutoCloseable
     }
 
     @SuppressWarnings("MethodLength")
-    private int replay(final int fragmentLimit, final boolean controlled)
+    private int replay(final int fragmentLimit, final boolean isControlled)
     {
         Image replayImage = this.replayImage;
 
@@ -1028,7 +1028,7 @@ public final class PersistentSubscription implements AutoCloseable
             }
         }
 
-        final int fragments = doPoll(replayImage, fragmentLimit, controlled);
+        final int fragments = doPoll(replayImage, fragmentLimit, isControlled);
 
         position = replayImage.position();
 
@@ -1064,7 +1064,7 @@ public final class PersistentSubscription implements AutoCloseable
                                         "subscriber or a firewall between them."));
     }
 
-    private int attemptSwitch(final int fragmentLimit, final boolean controlled)
+    private int attemptSwitch(final int fragmentLimit, final boolean isControlled)
     {
         int fragments = 0;
 
@@ -1105,7 +1105,7 @@ public final class PersistentSubscription implements AutoCloseable
             fragments += liveImage.controlledPoll(liveCatchupFragmentHandler, fragmentLimit);
 
             // Carry on with the replay for now.
-            if (controlled)
+            if (isControlled)
             {
                 fragments += replayImage.controlledPoll(replayCatchupControlledFragmentHandler, fragmentLimit);
             }
@@ -1174,7 +1174,7 @@ public final class PersistentSubscription implements AutoCloseable
         final int offset,
         final int length,
         final Header header,
-        final boolean controlled)
+        final boolean isControlled)
     {
         final long currentReplayPosition = header.position();
         if (currentReplayPosition == nextLivePosition)
@@ -1182,7 +1182,7 @@ public final class PersistentSubscription implements AutoCloseable
             state(State.LIVE);
             return ControlledFragmentHandler.Action.ABORT;
         }
-        if (controlled)
+        if (isControlled)
         {
             return controlledFragmentAssembler.onFragment(buffer, offset, length, header);
         }
@@ -1255,10 +1255,10 @@ public final class PersistentSubscription implements AutoCloseable
         return 0;
     }
 
-    private int live(final int fragmentLimit, final boolean controlled)
+    private int live(final int fragmentLimit, final boolean isControlled)
     {
         final Image image = liveImage;
-        final int fragments = doPoll(image, fragmentLimit, controlled);
+        final int fragments = doPoll(image, fragmentLimit, isControlled);
         if (fragments == 0 && image.isClosed())
         {
             position = image.position();
@@ -1341,9 +1341,9 @@ public final class PersistentSubscription implements AutoCloseable
         listener.onLiveLeft();
     }
 
-    private int doPoll(final Image image, final int fragmentLimit, final boolean controlled)
+    private int doPoll(final Image image, final int fragmentLimit, final boolean isControlled)
     {
-        if (controlled)
+        if (isControlled)
         {
             return image.controlledPoll(controlledFragmentAssembler, fragmentLimit);
         }
