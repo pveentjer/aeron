@@ -412,6 +412,21 @@ bool aeron_archive_persistent_subscription_is_replaying(aeron_archive_persistent
  */
 bool aeron_archive_persistent_subscription_has_failed(aeron_archive_persistent_subscription_t *persistent_subscription);
 
+/**
+ * Get the terminal error that caused the persistent subscription to fail.
+ * Only meaningful when aeron_archive_persistent_subscription_has_failed returns true.
+ *
+ * @param persistent_subscription to query.
+ * @param out_errcode optional pointer to receive the error code, may be NULL.
+ * @param out_message optional pointer to receive the error message, may be NULL.
+ * @return true if in the failed state, false otherwise.
+ * @see aeron_archive_persistent_subscription_has_failed
+ */
+bool aeron_archive_persistent_subscription_failure_reason(
+    aeron_archive_persistent_subscription_t *persistent_subscription,
+    int *out_errcode,
+    const char **out_message);
+
 #ifdef __cplusplus
 }
 #endif

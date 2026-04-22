@@ -1127,10 +1127,6 @@ public final class PersistentSubscription implements AutoCloseable
 
     private void onTerminalError(final Exception error)
     {
-        if (State.FAILED != state)
-        {
-            throw new RuntimeException("BOOM");
-        }
         failureReason = error;
         listener.onError(error);
     }
