@@ -31,20 +31,7 @@
 #include "uri/aeron_uri_string_builder.h"
 #include "util/aeron_error.h"
 
-#define transition(persistent_subscription, new_state)                                    \
-    do {                                                                                  \
-        printf("-> " #new_state "\n");fflush(stdout);                                     \
-        persistent_subscription->state = new_state;                                       \
-        aeron_counter_t *state_counter = persistent_subscription->context->state_counter; \
-        if (!aeron_counter_is_closed(state_counter))                                      \
-        {                                                                                 \
-            aeron_counter_set_release(aeron_counter_addr(state_counter), new_state);      \
-        }                                                                                 \
-        if (FAILED == new_state)                                                          \
-        {                                                                                 \
-            aeron_archive_async_client_close(persistent_subscription->archive);           \
-        }                                                                                 \
-    } while (0)
+
 
 struct aeron_archive_persistent_subscription_context_stct
 {
@@ -66,7 +53,7 @@ struct aeron_archive_persistent_subscription_context_stct
     aeron_counter_t *live_joined_counter;
 };
 
-struct async_archive_op
+typedef struct aeron_archive_persistent_subscription_async_archive_op_stct
 {
     int64_t correlation_id;
     int64_t deadline_ns;
@@ -76,9 +63,14 @@ struct async_archive_op
     char error_message[AERON_ERROR_MAX_TOTAL_LENGTH];
 
     bool response_received;
-};
+}
+aeron_archive_persistent_subscription_async_archive_op_t;
 
-static void async_archive_op_init(struct async_archive_op *op, int64_t correlation_id, int64_t deadline_ns)
+
+static void aeron_archive_persistent_subscription_async_archive_op_init(
+    aeron_archive_persistent_subscription_async_archive_op_t *op,
+    int64_t correlation_id,
+    int64_t deadline_ns)
 {
     op->correlation_id = correlation_id;
     op->deadline_ns = deadline_ns;
@@ -86,8 +78,8 @@ static void async_archive_op_init(struct async_archive_op *op, int64_t correlati
     op->response_received = false;
 }
 
-static void async_archive_op_on_control_response(
-    struct async_archive_op *op,
+static void aeron_archive_persistent_subscription_async_archive_op_on_control_response(
+    aeron_archive_persistent_subscription_async_archive_op_t *op,
     int64_t relevant_id,
     int32_t code,
     const char *error_message)
@@ -99,9 +91,9 @@ static void async_archive_op_on_control_response(
     op->response_received = true;
 }
 
-struct list_recording_request
+typedef struct aeron_archive_persistent_subscription_list_recording_request_stct
 {
-    struct async_archive_op op;
+    aeron_archive_persistent_subscription_async_archive_op_t op;
 
     int remaining;
 
@@ -110,26 +102,29 @@ struct list_recording_request
     int64_t stop_position;
     int32_t term_buffer_length;
     int32_t stream_id;
-};
+}
+aeron_archive_persistent_subscription_list_recording_request_t;
 
-enum max_recorded_position_state
+enum aeron_archive_persistent_subscription_max_recorded_position_state
 {
     REQUEST_MAX_POSITION,
     AWAIT_MAX_POSITION,
     RECHECK_REQUIRED,
 };
 
-struct max_recorded_position
+typedef struct aeron_archive_persistent_subscription_max_recorded_position_stct
 {
-    struct async_archive_op op;
+    aeron_archive_persistent_subscription_async_archive_op_t op;
 
-    enum max_recorded_position_state state;
+    enum aeron_archive_persistent_subscription_max_recorded_position_state state;
     int64_t max_recorded_position;
     int32_t close_enough_threshold;
-};
+}
+max_recorded_position_t;
 
-static void max_recorded_position_reset(
-    struct max_recorded_position *max_recorded_position,
+
+static void aeron_archive_persistent_subscription_max_recorded_position_reset(
+    max_recorded_position_t *max_recorded_position,
     int32_t close_enough_threshold)
 {
     max_recorded_position->state = REQUEST_MAX_POSITION;
@@ -178,10 +173,10 @@ struct aeron_archive_persistent_subscription_stct
     aeron_archive_replay_channel_type_t replay_channel_type;
     char replay_channel_uri[AERON_URI_MAX_LENGTH];
     bool replay_channel_is_ipc;
-    struct list_recording_request list_recording_request;
-    struct max_recorded_position max_recorded_position;
-    struct async_archive_op replay_request;
-    struct async_archive_op replay_token_request;
+    aeron_archive_persistent_subscription_list_recording_request_t list_recording_request;
+    max_recorded_position_t max_recorded_position;
+    aeron_archive_persistent_subscription_async_archive_op_t replay_request;
+    aeron_archive_persistent_subscription_async_archive_op_t replay_token_request;
     int64_t replay_session_id;
     int64_t replay_image_deadline_ns;
     int64_t join_difference;
@@ -203,7 +198,7 @@ struct aeron_archive_persistent_subscription_stct
     aeron_archive_proxy_t *response_channel_archive_proxy;
 };
 
-struct poll_ctx
+typedef struct aeron_archive_persistent_subscription_poll_ctx_stct
 {
     bool controlled;
     union
@@ -214,7 +209,27 @@ struct poll_ctx
     handler;
     void *clientd;
     size_t fragment_limit;
-};
+}
+aeron_archive_persistent_subscription_poll_ctx_t;
+
+static void aeron_archive_persistent_subscription_transition(
+    aeron_archive_persistent_subscription_t *persistent_subscription,
+    aeron_archive_persistent_subscription_state_t new_state)
+{
+    // printf("-> %d\n", new_state);
+    // fflush(stdout);
+    persistent_subscription->state = new_state;
+    aeron_counter_t *state_counter = persistent_subscription->context->state_counter;
+    if (!aeron_counter_is_closed(state_counter))
+    {
+        aeron_counter_set_release(aeron_counter_addr(state_counter), new_state);
+    }
+    if (FAILED == new_state)
+    {
+        aeron_archive_async_client_close(persistent_subscription->archive);
+    }
+}
+
 
 int aeron_archive_persistent_subscription_context_init(aeron_archive_persistent_subscription_context_t **context)
 {
@@ -238,7 +253,7 @@ int aeron_archive_persistent_subscription_context_init(aeron_archive_persistent_
     _context->recording_id = AERON_NULL_VALUE;
     _context->live_stream_id = AERON_NULL_VALUE;
     _context->replay_stream_id = AERON_NULL_VALUE;
-    _context->start_position = AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE;
+    _context->start_position = AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_LIVE;
 
     *context = _context;
 
@@ -267,7 +282,7 @@ int aeron_archive_persistent_subscription_context_close(aeron_archive_persistent
     return 0;
 }
 
-static int set_string(char **ptr, const char *val)
+static int aeron_archive_persistent_subscription_set_string(char **ptr, const char *val)
 {
     free(*ptr);
     *ptr = NULL;
@@ -298,7 +313,7 @@ int aeron_archive_persistent_subscription_context_set_aeron_directory_name(
     aeron_archive_persistent_subscription_context_t *context,
     const char *aeron_directory_name)
 {
-    return set_string(&context->aeron_directory_name, aeron_directory_name);
+    return aeron_archive_persistent_subscription_set_string(&context->aeron_directory_name, aeron_directory_name);
 }
 
 int aeron_archive_persistent_subscription_context_set_archive_context(
@@ -329,7 +344,7 @@ int aeron_archive_persistent_subscription_context_set_live_channel(
     aeron_archive_persistent_subscription_context_t *context,
     const char *live_channel)
 {
-    return set_string(&context->live_channel, live_channel);
+    return aeron_archive_persistent_subscription_set_string(&context->live_channel, live_channel);
 }
 
 const char *aeron_archive_persistent_subscription_context_get_live_channel(
@@ -357,7 +372,7 @@ int aeron_archive_persistent_subscription_context_set_replay_channel(
     aeron_archive_persistent_subscription_context_t *context,
     const char *replay_channel)
 {
-    return set_string(&context->replay_channel, replay_channel);
+    return aeron_archive_persistent_subscription_set_string(&context->replay_channel, replay_channel);
 }
 
 const char *aeron_archive_persistent_subscription_context_get_replay_channel(
@@ -471,7 +486,7 @@ aeron_counter_t *aeron_archive_persistent_subscription_context_get_live_joined_c
     return context->live_joined_counter;
 }
 
-static int persistent_subscription_allocate_counter(
+static int aeron_archive_persistent_subscription_persistent_subscription_allocate_counter(
     aeron_counter_t **counter_out,
     aeron_t *aeron,
     int32_t type_id,
@@ -559,7 +574,7 @@ int aeron_archive_persistent_subscription_context_conclude(aeron_archive_persist
         return -1;
     }
 
-    if (AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE > context->start_position)
+    if (AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_LIVE > context->start_position)
     {
         AERON_SET_ERR(EINVAL, "invalid start_position %" PRIi64, context->start_position);
         return -1;
@@ -634,7 +649,7 @@ int aeron_archive_persistent_subscription_context_conclude(aeron_archive_persist
     // Auto-allocate counters if not user-provided
     if (NULL == context->state_counter)
     {
-        if (persistent_subscription_allocate_counter(&context->state_counter, context->aeron,
+        if (aeron_archive_persistent_subscription_persistent_subscription_allocate_counter(&context->state_counter, context->aeron,
             AERON_PERSISTENT_SUBSCRIPTION_STATE_TYPE_ID, "Persistent Subscription State",
             context->replay_stream_id, context->replay_channel,
             context->live_stream_id, context->live_channel) < 0)
@@ -645,7 +660,7 @@ int aeron_archive_persistent_subscription_context_conclude(aeron_archive_persist
     }
     if (NULL == context->join_difference_counter)
     {
-        if (persistent_subscription_allocate_counter(&context->join_difference_counter, context->aeron,
+        if (aeron_archive_persistent_subscription_persistent_subscription_allocate_counter(&context->join_difference_counter, context->aeron,
             AERON_PERSISTENT_SUBSCRIPTION_JOIN_DIFFERENCE_TYPE_ID, "Persistent Subscription Join Difference",
             context->replay_stream_id, context->replay_channel,
             context->live_stream_id, context->live_channel) < 0)
@@ -656,7 +671,7 @@ int aeron_archive_persistent_subscription_context_conclude(aeron_archive_persist
     }
     if (NULL == context->live_left_counter)
     {
-        if (persistent_subscription_allocate_counter(&context->live_left_counter, context->aeron,
+        if (aeron_archive_persistent_subscription_persistent_subscription_allocate_counter(&context->live_left_counter, context->aeron,
             AERON_PERSISTENT_SUBSCRIPTION_LIVE_LEFT_COUNT_TYPE_ID, "Persistent Subscription Live Left Count",
             context->replay_stream_id, context->replay_channel,
             context->live_stream_id, context->live_channel) < 0)
@@ -667,7 +682,7 @@ int aeron_archive_persistent_subscription_context_conclude(aeron_archive_persist
     }
     if (NULL == context->live_joined_counter)
     {
-        if (persistent_subscription_allocate_counter(&context->live_joined_counter, context->aeron,
+        if (aeron_archive_persistent_subscription_persistent_subscription_allocate_counter(&context->live_joined_counter, context->aeron,
             AERON_PERSISTENT_SUBSCRIPTION_LIVE_JOINED_COUNT_TYPE_ID, "Persistent Subscription Live Joined Count",
             context->replay_stream_id, context->replay_channel,
             context->live_stream_id, context->live_channel) < 0)
@@ -680,7 +695,8 @@ int aeron_archive_persistent_subscription_context_conclude(aeron_archive_persist
     return 0;
 }
 
-static void fire_on_error_with_aeron_err(aeron_archive_persistent_subscription_t *persistent_subscription)
+static void aeron_archive_persistent_subscription_fire_on_error_with_aeron_err(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     aeron_archive_persistent_subscription_listener_t *listener = &persistent_subscription->listener;
     if (NULL != listener->on_error)
@@ -689,7 +705,8 @@ static void fire_on_error_with_aeron_err(aeron_archive_persistent_subscription_t
     }
 }
 
-static bool max_recorded_position_request_max_position(aeron_archive_persistent_subscription_t *persistent_subscription)
+static bool aeron_archive_persistent_subscription_max_recorded_position_request_max_position(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     int64_t correlation_id = aeron_next_correlation_id(persistent_subscription->context->aeron);
 
@@ -699,18 +716,18 @@ static bool max_recorded_position_request_max_position(aeron_archive_persistent_
         persistent_subscription->context->recording_id))
     {
         int64_t deadline_ns = aeron_nano_clock() + persistent_subscription->message_timeout_ns;
-        async_archive_op_init(&persistent_subscription->max_recorded_position.op, correlation_id, deadline_ns);
+        aeron_archive_persistent_subscription_async_archive_op_init(&persistent_subscription->max_recorded_position.op, correlation_id, deadline_ns);
         persistent_subscription->max_recorded_position.state = AWAIT_MAX_POSITION;
     }
 
     return false;
 }
 
-static bool max_recorded_position_await_max_position(
+static bool aeron_archive_persistent_subscription_max_recorded_position_await_max_position(
     aeron_archive_persistent_subscription_t *persistent_subscription,
     int64_t replayed_position)
 {
-    struct max_recorded_position *max_recorded_position = &persistent_subscription->max_recorded_position;
+    max_recorded_position_t *max_recorded_position = &persistent_subscription->max_recorded_position;
 
     if (max_recorded_position->op.response_received)
     {
@@ -732,7 +749,7 @@ static bool max_recorded_position_await_max_position(
         }
         else
         {
-            transition(persistent_subscription, FAILED);
+            aeron_archive_persistent_subscription_transition(persistent_subscription, FAILED);
 
             if (NULL != persistent_subscription->listener.on_error)
             {
@@ -758,7 +775,7 @@ static bool max_recorded_position_await_max_position(
     return false;
 }
 
-static bool max_recorded_position_recheck_required(
+static bool aeron_archive_persistent_subscription_max_recorded_position_recheck_required(
     aeron_archive_persistent_subscription_t *persistent_subscription,
     int64_t replayed_position)
 {
@@ -770,24 +787,25 @@ static bool max_recorded_position_recheck_required(
     return false;
 }
 
-static bool max_recorded_position_is_caught_up(
+static bool aeron_archive_persistent_subscription_max_recorded_position_is_caught_up(
     aeron_archive_persistent_subscription_t *persistent_subscription,
     int64_t replayed_position)
 {
     switch (persistent_subscription->max_recorded_position.state)
     {
         case REQUEST_MAX_POSITION:
-            return max_recorded_position_request_max_position(persistent_subscription);
+            return aeron_archive_persistent_subscription_max_recorded_position_request_max_position(persistent_subscription);
         case AWAIT_MAX_POSITION:
-            return max_recorded_position_await_max_position(persistent_subscription, replayed_position);
+            return aeron_archive_persistent_subscription_max_recorded_position_await_max_position(persistent_subscription, replayed_position);
         case RECHECK_REQUIRED:
-            return max_recorded_position_recheck_required(persistent_subscription, replayed_position);
+            return aeron_archive_persistent_subscription_max_recorded_position_recheck_required(persistent_subscription, replayed_position);
     }
 
     return false;
 }
 
-static void clean_up_request_publication(aeron_archive_persistent_subscription_t *persistent_subscription)
+static void aeron_archive_persistent_subscription_clean_up_request_publication(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     if (NULL != persistent_subscription->add_request_publication)
     {
@@ -811,7 +829,8 @@ static void clean_up_request_publication(aeron_archive_persistent_subscription_t
     persistent_subscription->response_channel_archive_proxy = NULL;
 }
 
-static void clean_up_replay(aeron_archive_persistent_subscription_t *persistent_subscription)
+static void aeron_archive_persistent_subscription_clean_up_replay(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     if (AERON_NULL_VALUE != persistent_subscription->replay_session_id)
     {
@@ -824,7 +843,8 @@ static void clean_up_replay(aeron_archive_persistent_subscription_t *persistent_
     }
 }
 
-static void clean_up_replay_subscription(aeron_archive_persistent_subscription_t *persistent_subscription)
+static void aeron_archive_persistent_subscription_clean_up_replay_subscription(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     if (NULL != persistent_subscription->add_replay_subscription)
     {
@@ -843,7 +863,8 @@ static void clean_up_replay_subscription(aeron_archive_persistent_subscription_t
     persistent_subscription->replay_image = NULL;
 }
 
-static void clean_up_live_subscription(aeron_archive_persistent_subscription_t *persistent_subscription)
+static void aeron_archive_persistent_subscription_clean_up_live_subscription(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     if (NULL != persistent_subscription->add_live_subscription)
     {
@@ -862,13 +883,15 @@ static void clean_up_live_subscription(aeron_archive_persistent_subscription_t *
     persistent_subscription->live_image = NULL;
 }
 
-static void set_live_image_deadline(aeron_archive_persistent_subscription_t *persistent_subscription)
+static void aeron_archive_persistent_subscription_set_live_image_deadline(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     persistent_subscription->live_image_deadline_ns = aeron_nano_clock() + persistent_subscription->message_timeout_ns;
     persistent_subscription->live_image_deadline_breached = false;
 }
 
-static void on_live_image_deadline_breached(aeron_archive_persistent_subscription_t *persistent_subscription)
+static void aeron_archive_persistent_subscription_on_live_image_deadline_breached(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     persistent_subscription->live_image_deadline_breached = true;
 
@@ -881,11 +904,11 @@ static void on_live_image_deadline_breached(aeron_archive_persistent_subscriptio
     }
 }
 
-static void on_archive_connected(void *clientd)
+static void aeron_archive_persistent_subscription_on_archive_connected(void *clientd)
 {
 }
 
-static void on_archive_disconnected(void *clientd)
+static void aeron_archive_persistent_subscription_on_archive_disconnected(void *clientd)
 {
     aeron_archive_persistent_subscription_t *persistent_subscription = clientd;
 
@@ -904,15 +927,15 @@ static void on_archive_disconnected(void *clientd)
         persistent_subscription->position = aeron_image_position(replay_image);
     }
 
-    clean_up_live_subscription(persistent_subscription);
-    clean_up_request_publication(persistent_subscription);
-    clean_up_replay(persistent_subscription);
-    clean_up_replay_subscription(persistent_subscription);
+    aeron_archive_persistent_subscription_clean_up_live_subscription(persistent_subscription);
+    aeron_archive_persistent_subscription_clean_up_request_publication(persistent_subscription);
+    aeron_archive_persistent_subscription_clean_up_replay(persistent_subscription);
+    aeron_archive_persistent_subscription_clean_up_replay_subscription(persistent_subscription);
 
-    transition(persistent_subscription, AWAIT_ARCHIVE_CONNECTION);
+    aeron_archive_persistent_subscription_transition(persistent_subscription, AWAIT_ARCHIVE_CONNECTION);
 }
 
-static void on_archive_control_response(
+static void aeron_archive_persistent_subscription_on_archive_control_response(
     void *clientd,
     int64_t correlation_id,
     int64_t relevant_id,
@@ -923,31 +946,33 @@ static void on_archive_control_response(
 
     if (correlation_id == persistent_subscription->max_recorded_position.op.correlation_id)
     {
-        async_archive_op_on_control_response(
+        aeron_archive_persistent_subscription_async_archive_op_on_control_response(
             &persistent_subscription->max_recorded_position.op, relevant_id, code, error_message);
     }
     else if (correlation_id == persistent_subscription->list_recording_request.op.correlation_id)
     {
-        async_archive_op_on_control_response(
+        aeron_archive_persistent_subscription_async_archive_op_on_control_response(
             &persistent_subscription->list_recording_request.op, relevant_id, code, error_message);
     }
     else if (correlation_id == persistent_subscription->replay_request.correlation_id)
     {
-        async_archive_op_on_control_response(
+        aeron_archive_persistent_subscription_async_archive_op_on_control_response(
             &persistent_subscription->replay_request, relevant_id, code, error_message);
     }
     else if (correlation_id == persistent_subscription->replay_token_request.correlation_id)
     {
-        async_archive_op_on_control_response(
+        aeron_archive_persistent_subscription_async_archive_op_on_control_response(
             &persistent_subscription->replay_token_request, relevant_id, code, error_message);
     }
 }
 
-static void on_archive_recording_descriptor(void *clientd, aeron_archive_recording_descriptor_t *recording_descriptor)
+static void aeron_archive_persistent_subscription_on_archive_recording_descriptor(
+    void *clientd,
+    aeron_archive_recording_descriptor_t *recording_descriptor)
 {
     aeron_archive_persistent_subscription_t *persistent_subscription = clientd;
 
-    struct list_recording_request *list_recording_request = &persistent_subscription->list_recording_request;
+    aeron_archive_persistent_subscription_list_recording_request_t *list_recording_request = &persistent_subscription->list_recording_request;
     if (recording_descriptor->correlation_id == list_recording_request->op.correlation_id)
     {
         list_recording_request->recording_id = recording_descriptor->recording_id;
@@ -963,13 +988,13 @@ static void on_archive_recording_descriptor(void *clientd, aeron_archive_recordi
     }
 }
 
-static void on_archive_error(void *clientd, int errcode, const char *errmsg)
+static void aeron_archive_persistent_subscription_on_archive_error(void *clientd, int errcode, const char *errmsg)
 {
     aeron_archive_persistent_subscription_t *persistent_subscription = clientd;
 
     if (aeron_archive_async_client_is_closed(persistent_subscription->archive))
     {
-        transition(persistent_subscription, FAILED);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, FAILED);
     }
 
     if (NULL != persistent_subscription->listener.on_error)
@@ -978,7 +1003,9 @@ static void on_archive_error(void *clientd, int errcode, const char *errmsg)
     }
 }
 
-static void join_difference(aeron_archive_persistent_subscription_t *persistent_subscription, int64_t join_difference)
+static void aeron_archive_persistent_subscription_set_join_difference(
+    aeron_archive_persistent_subscription_t *persistent_subscription,
+    int64_t join_difference)
 {
     persistent_subscription->join_difference = join_difference;
 
@@ -989,7 +1016,8 @@ static void join_difference(aeron_archive_persistent_subscription_t *persistent_
     }
 }
 
-static void on_live_joined(aeron_archive_persistent_subscription_t *persistent_subscription)
+static void aeron_archive_persistent_subscription_on_live_joined(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     aeron_counter_t *live_joined_counter = persistent_subscription->context->live_joined_counter;
     if (!aeron_counter_is_closed(live_joined_counter))
@@ -1004,7 +1032,8 @@ static void on_live_joined(aeron_archive_persistent_subscription_t *persistent_s
     }
 }
 
-static void on_live_left(aeron_archive_persistent_subscription_t *persistent_subscription)
+static void aeron_archive_persistent_subscription_on_live_left(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     aeron_counter_t *live_left_counter = persistent_subscription->context->live_left_counter;
     if (!aeron_counter_is_closed(live_left_counter))
@@ -1060,11 +1089,11 @@ int aeron_archive_persistent_subscription_create(
     }
 
     _persistent_subscription->archive_listener.clientd = _persistent_subscription;
-    _persistent_subscription->archive_listener.on_connected = on_archive_connected;
-    _persistent_subscription->archive_listener.on_disconnected = on_archive_disconnected;
-    _persistent_subscription->archive_listener.on_control_response = on_archive_control_response;
-    _persistent_subscription->archive_listener.on_recording_descriptor = on_archive_recording_descriptor;
-    _persistent_subscription->archive_listener.on_error = on_archive_error;
+    _persistent_subscription->archive_listener.on_connected = aeron_archive_persistent_subscription_on_archive_connected;
+    _persistent_subscription->archive_listener.on_disconnected = aeron_archive_persistent_subscription_on_archive_disconnected;
+    _persistent_subscription->archive_listener.on_control_response = aeron_archive_persistent_subscription_on_archive_control_response;
+    _persistent_subscription->archive_listener.on_recording_descriptor = aeron_archive_persistent_subscription_on_archive_recording_descriptor;
+    _persistent_subscription->archive_listener.on_error = aeron_archive_persistent_subscription_on_archive_error;
 
     aeron_archive_context_set_aeron(context->archive_context, context->aeron);
 
@@ -1119,9 +1148,9 @@ int aeron_archive_persistent_subscription_create(
     strncpy(_persistent_subscription->replay_channel_uri, context->replay_channel, AERON_URI_MAX_LENGTH - 1);
     _persistent_subscription->replay_channel_uri[AERON_URI_MAX_LENGTH - 1] = '\0';
 
-    join_difference(_persistent_subscription, INT64_MIN);
+    aeron_archive_persistent_subscription_set_join_difference(_persistent_subscription, INT64_MIN);
 
-    transition(_persistent_subscription, AWAIT_ARCHIVE_CONNECTION);
+    aeron_archive_persistent_subscription_transition(_persistent_subscription, AWAIT_ARCHIVE_CONNECTION);
 
     *persistent_subscription = _persistent_subscription;
 
@@ -1139,10 +1168,10 @@ int aeron_archive_persistent_subscription_close(aeron_archive_persistent_subscri
 {
     if (NULL != persistent_subscription)
     {
-        clean_up_live_subscription(persistent_subscription);
-        clean_up_request_publication(persistent_subscription);
-        clean_up_replay(persistent_subscription);
-        clean_up_replay_subscription(persistent_subscription);
+        aeron_archive_persistent_subscription_clean_up_live_subscription(persistent_subscription);
+        aeron_archive_persistent_subscription_clean_up_request_publication(persistent_subscription);
+        aeron_archive_persistent_subscription_clean_up_replay(persistent_subscription);
+        aeron_archive_persistent_subscription_clean_up_replay_subscription(persistent_subscription);
         aeron_archive_async_client_destroy(persistent_subscription->archive);
         aeron_archive_persistent_subscription_context_close(persistent_subscription->context);
         aeron_image_fragment_assembler_delete(persistent_subscription->uncontrolled_assembler);
@@ -1153,7 +1182,8 @@ int aeron_archive_persistent_subscription_close(aeron_archive_persistent_subscri
     return 0;
 }
 
-static int await_archive_connection(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_await_archive_connection(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     bool connected = aeron_archive_async_client_is_connected(persistent_subscription->archive);
     if (!connected)
@@ -1161,11 +1191,12 @@ static int await_archive_connection(aeron_archive_persistent_subscription_t *per
         return 0;
     }
 
-    transition(persistent_subscription, SEND_LIST_RECORDING_REQUEST);
+    aeron_archive_persistent_subscription_transition(persistent_subscription, SEND_LIST_RECORDING_REQUEST);
     return 1;
 }
 
-static int send_list_recording_request(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_send_list_recording_request(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     int64_t correlation_id = aeron_next_correlation_id(persistent_subscription->context->aeron);
 
@@ -1179,47 +1210,49 @@ static int send_list_recording_request(aeron_archive_persistent_subscription_t *
             return 0;
         }
 
-        transition(persistent_subscription, AWAIT_ARCHIVE_CONNECTION);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, AWAIT_ARCHIVE_CONNECTION);
 
         return 1;
     }
 
     int64_t deadline_ns = aeron_nano_clock() + persistent_subscription->message_timeout_ns;
-    async_archive_op_init(&persistent_subscription->list_recording_request.op, correlation_id, deadline_ns);
+    aeron_archive_persistent_subscription_async_archive_op_init(&persistent_subscription->list_recording_request.op, correlation_id, deadline_ns);
     persistent_subscription->list_recording_request.remaining = 1;
 
-    transition(persistent_subscription, AWAIT_LIST_RECORDING_RESPONSE);
+    aeron_archive_persistent_subscription_transition(persistent_subscription, AWAIT_LIST_RECORDING_RESPONSE);
 
     return 1;
 }
 
-static void set_up_replay(aeron_archive_persistent_subscription_t *persistent_subscription)
+static void aeron_archive_persistent_subscription_set_up_replay(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
-    max_recorded_position_reset(
+    aeron_archive_persistent_subscription_max_recorded_position_reset(
         &persistent_subscription->max_recorded_position,
         persistent_subscription->list_recording_request.term_buffer_length >> 2);
 
-    join_difference(persistent_subscription, INT64_MIN);
+    aeron_archive_persistent_subscription_set_join_difference(persistent_subscription, INT64_MIN);
 
     if (persistent_subscription->replay_channel_type == REPLAY_CHANNEL_SESSION_SPECIFIC)
     {
-        transition(persistent_subscription, SEND_REPLAY_REQUEST);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, SEND_REPLAY_REQUEST);
     }
     else
     {
-        transition(persistent_subscription, ADD_REPLAY_SUBSCRIPTION);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, ADD_REPLAY_SUBSCRIPTION);
     }
 }
 
-static bool validate_descriptor(aeron_archive_persistent_subscription_t *persistent_subscription)
+static bool aeron_archive_persistent_subscription_validate_descriptor(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
-    struct list_recording_request *req = &persistent_subscription->list_recording_request;
+    aeron_archive_persistent_subscription_list_recording_request_t *req = &persistent_subscription->list_recording_request;
 
     if (req->remaining == 0)
     {
         if (persistent_subscription->context->live_stream_id != req->stream_id)
         {
-            transition(persistent_subscription, FAILED);
+            aeron_archive_persistent_subscription_transition(persistent_subscription, FAILED);
 
             if (NULL != persistent_subscription->listener.on_error)
             {
@@ -1243,7 +1276,7 @@ static bool validate_descriptor(aeron_archive_persistent_subscription_t *persist
         {
             if (persistent_subscription->position < req->start_position)
             {
-                transition(persistent_subscription, FAILED);
+                aeron_archive_persistent_subscription_transition(persistent_subscription, FAILED);
 
                 if (NULL != persistent_subscription->listener.on_error)
                 {
@@ -1263,9 +1296,9 @@ static bool validate_descriptor(aeron_archive_persistent_subscription_t *persist
                 return false;
             }
 
-            if (req->stop_position != AERON_NULL_VALUE && persistent_subscription->position >= req->stop_position)
+            if (AERON_NULL_VALUE != req->stop_position && persistent_subscription->position >= req->stop_position)
             {
-                transition(persistent_subscription, FAILED);
+                aeron_archive_persistent_subscription_transition(persistent_subscription, FAILED);
 
                 if (NULL != persistent_subscription->listener.on_error)
                 {
@@ -1285,14 +1318,14 @@ static bool validate_descriptor(aeron_archive_persistent_subscription_t *persist
                 return false;
             }
         }
-        else if (persistent_subscription->position == AERON_PERSISTENT_SUBSCRIPTION_FROM_START)
+        else if (AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_START == persistent_subscription->position)
         {
             persistent_subscription->position = req->start_position;
         }
     }
     else
     {
-        transition(persistent_subscription, FAILED);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, FAILED);
 
         if (NULL != persistent_subscription->listener.on_error)
         {
@@ -1313,7 +1346,8 @@ static bool validate_descriptor(aeron_archive_persistent_subscription_t *persist
     return true;
 }
 
-static int await_list_recording_response(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_await_list_recording_response(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     if (!persistent_subscription->list_recording_request.op.response_received)
     {
@@ -1321,11 +1355,11 @@ static int await_list_recording_response(aeron_archive_persistent_subscription_t
         {
             if (aeron_archive_async_client_is_connected(persistent_subscription->archive))
             {
-                transition(persistent_subscription, SEND_LIST_RECORDING_REQUEST);
+                aeron_archive_persistent_subscription_transition(persistent_subscription, SEND_LIST_RECORDING_REQUEST);
             }
             else
             {
-                transition(persistent_subscription, AWAIT_ARCHIVE_CONNECTION);
+                aeron_archive_persistent_subscription_transition(persistent_subscription, AWAIT_ARCHIVE_CONNECTION);
             }
 
             return 1;
@@ -1334,24 +1368,25 @@ static int await_list_recording_response(aeron_archive_persistent_subscription_t
         return 0;
     }
 
-    if (!validate_descriptor(persistent_subscription))
+    if (!aeron_archive_persistent_subscription_validate_descriptor(persistent_subscription))
     {
         return 1;
     }
 
-    if (AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE == persistent_subscription->position)
+    if (AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_LIVE == persistent_subscription->position)
     {
-        transition(persistent_subscription, ADD_LIVE_SUBSCRIPTION);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, ADD_LIVE_SUBSCRIPTION);
     }
     else
     {
-        set_up_replay(persistent_subscription);
+        aeron_archive_persistent_subscription_set_up_replay(persistent_subscription);
     }
 
     return 1;
 }
 
-static int send_replay_request(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_send_replay_request(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     int64_t correlation_id = aeron_next_correlation_id(persistent_subscription->context->aeron);
 
@@ -1384,37 +1419,38 @@ static int send_replay_request(aeron_archive_persistent_subscription_t *persiste
             return 0;
         }
 
-        clean_up_request_publication(persistent_subscription);
-        clean_up_replay_subscription(persistent_subscription);
-        transition(persistent_subscription, AWAIT_ARCHIVE_CONNECTION);
+        aeron_archive_persistent_subscription_clean_up_request_publication(persistent_subscription);
+        aeron_archive_persistent_subscription_clean_up_replay_subscription(persistent_subscription);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, AWAIT_ARCHIVE_CONNECTION);
 
         return 1;
     }
 
     int64_t deadline_ns = aeron_nano_clock() + persistent_subscription->message_timeout_ns;
-    async_archive_op_init(&persistent_subscription->replay_request, correlation_id, deadline_ns);
+    aeron_archive_persistent_subscription_async_archive_op_init(&persistent_subscription->replay_request, correlation_id, deadline_ns);
 
-    transition(persistent_subscription, AWAIT_REPLAY_RESPONSE);
+    aeron_archive_persistent_subscription_transition(persistent_subscription, AWAIT_REPLAY_RESPONSE);
 
     return 1;
 }
 
-static int aeron_archive_persistent_subscription_await_replay_response(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_await_replay_response(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     if (!persistent_subscription->replay_request.response_received)
     {
         if (aeron_nano_clock() - persistent_subscription->replay_request.deadline_ns >= 0)
         {
-            clean_up_request_publication(persistent_subscription);
-            clean_up_replay_subscription(persistent_subscription);
+            aeron_archive_persistent_subscription_clean_up_request_publication(persistent_subscription);
+            aeron_archive_persistent_subscription_clean_up_replay_subscription(persistent_subscription);
 
             if (aeron_archive_async_client_is_connected(persistent_subscription->archive))
             {
-                set_up_replay(persistent_subscription);
+                aeron_archive_persistent_subscription_set_up_replay(persistent_subscription);
             }
             else
             {
-                transition(persistent_subscription, AWAIT_ARCHIVE_CONNECTION);
+                aeron_archive_persistent_subscription_transition(persistent_subscription, AWAIT_ARCHIVE_CONNECTION);
             }
 
             return 1;
@@ -1425,10 +1461,10 @@ static int aeron_archive_persistent_subscription_await_replay_response(aeron_arc
 
     if (persistent_subscription->replay_request.code != aeron_archive_client_controlResponseCode_OK)
     {
-        transition(persistent_subscription, FAILED);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, FAILED);
 
-        clean_up_request_publication(persistent_subscription);
-        clean_up_replay_subscription(persistent_subscription);
+        aeron_archive_persistent_subscription_clean_up_request_publication(persistent_subscription);
+        aeron_archive_persistent_subscription_clean_up_replay_subscription(persistent_subscription);
 
         if (NULL != persistent_subscription->listener.on_error)
         {
@@ -1454,7 +1490,7 @@ static int aeron_archive_persistent_subscription_await_replay_response(aeron_arc
         if (aeron_uri_string_builder_init_on_string(&builder, persistent_subscription->replay_channel_uri) < 0)
         {
             AERON_APPEND_ERR("%s", "Failed to parse replay_channel_uri");
-            transition(persistent_subscription, FAILED);
+            aeron_archive_persistent_subscription_transition(persistent_subscription, FAILED);
             return 1;
         }
 
@@ -1470,22 +1506,23 @@ static int aeron_archive_persistent_subscription_await_replay_response(aeron_arc
 
         aeron_uri_string_builder_close(&builder);
 
-        transition(persistent_subscription, ADD_REPLAY_SUBSCRIPTION);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, ADD_REPLAY_SUBSCRIPTION);
     }
     else
     {
-        clean_up_request_publication(persistent_subscription);
+        aeron_archive_persistent_subscription_clean_up_request_publication(persistent_subscription);
 
         persistent_subscription->replay_image_deadline_ns =
             aeron_nano_clock() + persistent_subscription->message_timeout_ns;
 
-        transition(persistent_subscription, REPLAY);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, REPLAY);
     }
 
     return 1;
 }
 
-static int aeron_archive_persistent_subscription_add_replay_subscription(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_add_replay_subscription(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     // Dynamic port: use the raw context channel (with :0) so the OS assigns a free port.
     // Session-specific: use replay_channel_uri which now has the session id injected.
@@ -1503,19 +1540,20 @@ static int aeron_archive_persistent_subscription_add_replay_subscription(aeron_a
         NULL,
         NULL) < 0)
     {
-        transition(persistent_subscription, FAILED);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, FAILED);
 
-        fire_on_error_with_aeron_err(persistent_subscription);
+        aeron_archive_persistent_subscription_fire_on_error_with_aeron_err(persistent_subscription);
 
         return 1;
     }
 
-    transition(persistent_subscription, AWAIT_REPLAY_SUBSCRIPTION);
+    aeron_archive_persistent_subscription_transition(persistent_subscription, AWAIT_REPLAY_SUBSCRIPTION);
 
     return 1;
 }
 
-static int aeron_archive_persistent_subscription_await_replay_subscription(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_await_replay_subscription(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     if (aeron_async_add_subscription_poll(
         &persistent_subscription->replay_subscription,
@@ -1523,15 +1561,15 @@ static int aeron_archive_persistent_subscription_await_replay_subscription(aeron
     {
         int errcode = aeron_errcode();
         persistent_subscription->add_replay_subscription = NULL;
-        clean_up_replay(persistent_subscription);
+        aeron_archive_persistent_subscription_clean_up_replay(persistent_subscription);
 
         if (-AERON_ERROR_CODE_RESOURCE_TEMPORARILY_UNAVAILABLE == errcode)
         {
-            set_up_replay(persistent_subscription);
+            aeron_archive_persistent_subscription_set_up_replay(persistent_subscription);
         }
         else
         {
-            transition(persistent_subscription, FAILED);
+            aeron_archive_persistent_subscription_transition(persistent_subscription, FAILED);
         }
 
         if (NULL != persistent_subscription->listener.on_error)
@@ -1559,21 +1597,22 @@ static int aeron_archive_persistent_subscription_await_replay_subscription(aeron
 
     if (persistent_subscription->replay_channel_type == REPLAY_CHANNEL_SESSION_SPECIFIC)
     {
-        transition(persistent_subscription, REPLAY);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, REPLAY);
     }
     else if (persistent_subscription->replay_channel_type == REPLAY_CHANNEL_DYNAMIC_PORT)
     {
-        transition(persistent_subscription, AWAIT_REPLAY_CHANNEL_ENDPOINT);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, AWAIT_REPLAY_CHANNEL_ENDPOINT);
     }
     else
     {
-        transition(persistent_subscription, ADD_REQUEST_PUBLICATION);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, ADD_REQUEST_PUBLICATION);
     }
 
     return 1;
 }
 
-static int aeron_archive_persistent_subscription_await_replay_channel_endpoint(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_await_replay_channel_endpoint(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     if (aeron_subscription_try_resolve_channel_endpoint_port(
         persistent_subscription->replay_subscription,
@@ -1584,12 +1623,13 @@ static int aeron_archive_persistent_subscription_await_replay_channel_endpoint(a
         return 0;
     }
 
-    transition(persistent_subscription, SEND_REPLAY_REQUEST);
+    aeron_archive_persistent_subscription_transition(persistent_subscription, SEND_REPLAY_REQUEST);
 
     return 1;
 }
 
-static int aeron_archive_persistent_subscription_add_request_publication(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_add_request_publication(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     char *control_request_channel = persistent_subscription->context->archive_context->control_request_channel;
     int32_t stream_id = persistent_subscription->context->archive_context->control_request_stream_id;
@@ -1627,16 +1667,17 @@ static int aeron_archive_persistent_subscription_add_request_publication(aeron_a
         goto error;
     }
 
-    transition(persistent_subscription, AWAIT_REQUEST_PUBLICATION);
+    aeron_archive_persistent_subscription_transition(persistent_subscription, AWAIT_REQUEST_PUBLICATION);
     return 1;
 
 error:
-    transition(persistent_subscription, FAILED);
-    fire_on_error_with_aeron_err(persistent_subscription);
+    aeron_archive_persistent_subscription_transition(persistent_subscription, FAILED);
+    aeron_archive_persistent_subscription_fire_on_error_with_aeron_err(persistent_subscription);
     return 1;
 }
 
-static int aeron_archive_persistent_subscription_await_request_publication(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_await_request_publication(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     int result = aeron_async_add_exclusive_publication_poll(
         &persistent_subscription->request_publication,
@@ -1653,19 +1694,19 @@ static int aeron_archive_persistent_subscription_await_request_publication(aeron
     {
         int errcode = aeron_errcode();
 
-        clean_up_replay_subscription(persistent_subscription);
+        aeron_archive_persistent_subscription_clean_up_replay_subscription(persistent_subscription);
 
         if (-AERON_ERROR_CODE_RESOURCE_TEMPORARILY_UNAVAILABLE == errcode)
         {
-            set_up_replay(persistent_subscription);
+            aeron_archive_persistent_subscription_set_up_replay(persistent_subscription);
         }
         else
         {
-            transition(persistent_subscription, FAILED);
+            aeron_archive_persistent_subscription_transition(persistent_subscription, FAILED);
         }
 
         AERON_APPEND_ERR("%s", "failed to add request publication");
-        fire_on_error_with_aeron_err(persistent_subscription);
+        aeron_archive_persistent_subscription_fire_on_error_with_aeron_err(persistent_subscription);
         return 1;
     }
 
@@ -1675,9 +1716,9 @@ static int aeron_archive_persistent_subscription_await_request_publication(aeron
         persistent_subscription->request_publication,
         AERON_ARCHIVE_MESSAGE_RETRY_ATTEMPTS_DEFAULT) < 0)
     {
-        transition(persistent_subscription, FAILED);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, FAILED);
         AERON_APPEND_ERR("%s", "failed to create archive proxy");
-        fire_on_error_with_aeron_err(persistent_subscription);
+        aeron_archive_persistent_subscription_fire_on_error_with_aeron_err(persistent_subscription);
         return 1;
     }
 
@@ -1685,11 +1726,12 @@ static int aeron_archive_persistent_subscription_await_request_publication(aeron
         persistent_subscription->response_channel_archive_proxy,
         aeron_archive_async_client_get_control_session_id(persistent_subscription->archive));
 
-    transition(persistent_subscription, SEND_REPLAY_TOKEN_REQUEST);
+    aeron_archive_persistent_subscription_transition(persistent_subscription, SEND_REPLAY_TOKEN_REQUEST);
     return 1;
 }
 
-static int aeron_archive_persistent_subscription_send_replay_token_request(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_send_replay_token_request(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     int64_t correlation_id = aeron_next_correlation_id(persistent_subscription->context->aeron);
 
@@ -1703,38 +1745,39 @@ static int aeron_archive_persistent_subscription_send_replay_token_request(aeron
             return 0;
         }
 
-        clean_up_request_publication(persistent_subscription);
-        clean_up_replay_subscription(persistent_subscription);
+        aeron_archive_persistent_subscription_clean_up_request_publication(persistent_subscription);
+        aeron_archive_persistent_subscription_clean_up_replay_subscription(persistent_subscription);
 
-        transition(persistent_subscription, AWAIT_ARCHIVE_CONNECTION);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, AWAIT_ARCHIVE_CONNECTION);
 
         return 1;
     }
 
     int64_t deadline_ns = aeron_nano_clock() + persistent_subscription->message_timeout_ns;
-    async_archive_op_init(&persistent_subscription->replay_token_request, correlation_id, deadline_ns);
+    aeron_archive_persistent_subscription_async_archive_op_init(&persistent_subscription->replay_token_request, correlation_id, deadline_ns);
 
-    transition(persistent_subscription, AWAIT_REPLAY_TOKEN);
+    aeron_archive_persistent_subscription_transition(persistent_subscription, AWAIT_REPLAY_TOKEN);
 
     return 1;
 }
 
-static int aeron_archive_persistent_subscription_await_replay_token(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_await_replay_token(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     if (!persistent_subscription->replay_token_request.response_received)
     {
         if (aeron_nano_clock() - persistent_subscription->replay_token_request.deadline_ns >= 0)
         {
-            clean_up_request_publication(persistent_subscription);
-            clean_up_replay_subscription(persistent_subscription);
+            aeron_archive_persistent_subscription_clean_up_request_publication(persistent_subscription);
+            aeron_archive_persistent_subscription_clean_up_replay_subscription(persistent_subscription);
 
             if (aeron_archive_async_client_is_connected(persistent_subscription->archive))
             {
-                set_up_replay(persistent_subscription);
+                aeron_archive_persistent_subscription_set_up_replay(persistent_subscription);
             }
             else
             {
-                transition(persistent_subscription, AWAIT_ARCHIVE_CONNECTION);
+                aeron_archive_persistent_subscription_transition(persistent_subscription, AWAIT_ARCHIVE_CONNECTION);
             }
 
             return 1;
@@ -1745,10 +1788,10 @@ static int aeron_archive_persistent_subscription_await_replay_token(aeron_archiv
 
     if (persistent_subscription->replay_token_request.code != aeron_archive_client_controlResponseCode_OK)
     {
-        transition(persistent_subscription, FAILED);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, FAILED);
 
-        clean_up_request_publication(persistent_subscription);
-        clean_up_replay_subscription(persistent_subscription);
+        aeron_archive_persistent_subscription_clean_up_request_publication(persistent_subscription);
+        aeron_archive_persistent_subscription_clean_up_replay_subscription(persistent_subscription);
 
         if (NULL != persistent_subscription->listener.on_error)
         {
@@ -1769,17 +1812,18 @@ static int aeron_archive_persistent_subscription_await_replay_token(aeron_archiv
 
     if (persistent_subscription->replay_channel_is_ipc)
     {
-        transition(persistent_subscription, SEND_REPLAY_REQUEST);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, SEND_REPLAY_REQUEST);
     }
     else
     {
-        transition(persistent_subscription, AWAIT_REPLAY_CHANNEL_ENDPOINT);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, AWAIT_REPLAY_CHANNEL_ENDPOINT);
     }
 
     return 1;
 }
 
-static bool aeron_archive_persistent_subscription_do_add_live_subscription(aeron_archive_persistent_subscription_t *persistent_subscription)
+static bool aeron_archive_persistent_subscription_do_add_live_subscription(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     persistent_subscription->live_image = NULL;
     persistent_subscription->live_subscription = NULL;
@@ -1795,9 +1839,9 @@ static bool aeron_archive_persistent_subscription_do_add_live_subscription(aeron
         NULL,
         NULL) < 0)
     {
-        transition(persistent_subscription, FAILED);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, FAILED);
         AERON_APPEND_ERR("%s", "failed to add live subscription");
-        fire_on_error_with_aeron_err(persistent_subscription);
+        aeron_archive_persistent_subscription_fire_on_error_with_aeron_err(persistent_subscription);
         return false;
     }
 
@@ -1807,7 +1851,7 @@ static bool aeron_archive_persistent_subscription_do_add_live_subscription(aeron
 static int aeron_archive_persistent_subscription_do_poll(
     aeron_archive_persistent_subscription_t *persistent_subscription,
     aeron_image_t *image,
-    struct poll_ctx *poll_ctx)
+    aeron_archive_persistent_subscription_poll_ctx_t *poll_ctx)
 {
     if (poll_ctx->controlled)
     {
@@ -1831,7 +1875,9 @@ static int aeron_archive_persistent_subscription_do_poll(
     }
 }
 
-static int aeron_archive_persistent_subscription_replay(aeron_archive_persistent_subscription_t *persistent_subscription, struct poll_ctx *poll_ctx)
+static int aeron_archive_persistent_subscription_replay(
+    aeron_archive_persistent_subscription_t *persistent_subscription,
+    aeron_archive_persistent_subscription_poll_ctx_t *poll_ctx)
 {
     aeron_image_t *image = persistent_subscription->replay_image;
 
@@ -1845,9 +1891,9 @@ static int aeron_archive_persistent_subscription_replay(aeron_archive_persistent
         {
             if (aeron_nano_clock() - persistent_subscription->replay_image_deadline_ns >= 0)
             {
-                clean_up_replay(persistent_subscription);
-                clean_up_replay_subscription(persistent_subscription);
-                set_up_replay(persistent_subscription);
+                aeron_archive_persistent_subscription_clean_up_replay(persistent_subscription);
+                aeron_archive_persistent_subscription_clean_up_replay_subscription(persistent_subscription);
+                aeron_archive_persistent_subscription_set_up_replay(persistent_subscription);
 
                 return 1;
             }
@@ -1861,10 +1907,10 @@ static int aeron_archive_persistent_subscription_replay(aeron_archive_persistent
     if (aeron_image_is_closed(image))
     {
         persistent_subscription->position = aeron_image_position(image);
-        clean_up_live_subscription(persistent_subscription);
-        clean_up_replay(persistent_subscription);
-        clean_up_replay_subscription(persistent_subscription);
-        set_up_replay(persistent_subscription);
+        aeron_archive_persistent_subscription_clean_up_live_subscription(persistent_subscription);
+        aeron_archive_persistent_subscription_clean_up_replay(persistent_subscription);
+        aeron_archive_persistent_subscription_clean_up_replay_subscription(persistent_subscription);
+        aeron_archive_persistent_subscription_set_up_replay(persistent_subscription);
 
         return 1;
     }
@@ -1879,16 +1925,16 @@ static int aeron_archive_persistent_subscription_replay(aeron_archive_persistent
 
             if (-AERON_ERROR_CODE_RESOURCE_TEMPORARILY_UNAVAILABLE != aeron_errcode())
             {
-                transition(persistent_subscription, FAILED);
+                aeron_archive_persistent_subscription_transition(persistent_subscription, FAILED);
             }
 
             AERON_APPEND_ERR("%s", "failed to add live subscription");
-            fire_on_error_with_aeron_err(persistent_subscription);
+            aeron_archive_persistent_subscription_fire_on_error_with_aeron_err(persistent_subscription);
 
             if (FAILED == persistent_subscription->state)
             {
-                clean_up_replay(persistent_subscription);
-                clean_up_replay_subscription(persistent_subscription);
+                aeron_archive_persistent_subscription_clean_up_replay(persistent_subscription);
+                aeron_archive_persistent_subscription_clean_up_replay_subscription(persistent_subscription);
             }
 
             return 1;
@@ -1897,7 +1943,7 @@ static int aeron_archive_persistent_subscription_replay(aeron_archive_persistent
         if (NULL != persistent_subscription->live_subscription)
         {
             persistent_subscription->add_live_subscription = NULL;
-            set_live_image_deadline(persistent_subscription);
+            aeron_archive_persistent_subscription_set_live_image_deadline(persistent_subscription);
         }
     }
 
@@ -1911,16 +1957,17 @@ static int aeron_archive_persistent_subscription_replay(aeron_archive_persistent
 
             int64_t live_position = aeron_image_position(persistent_subscription->live_image);
             int64_t replay_position = aeron_image_position(image);
-            join_difference(persistent_subscription, live_position - replay_position);
+            aeron_archive_persistent_subscription_set_join_difference(
+                persistent_subscription, live_position - replay_position);
 
-            transition(persistent_subscription, ATTEMPT_SWITCH);
+            aeron_archive_persistent_subscription_transition(persistent_subscription, ATTEMPT_SWITCH);
 
             return 1;
         }
         else if (!persistent_subscription->live_image_deadline_breached &&
                  aeron_nano_clock() - persistent_subscription->live_image_deadline_ns >= 0)
         {
-            on_live_image_deadline_breached(persistent_subscription);
+            aeron_archive_persistent_subscription_on_live_image_deadline_breached(persistent_subscription);
         }
     }
 
@@ -1930,12 +1977,12 @@ static int aeron_archive_persistent_subscription_replay(aeron_archive_persistent
 
     if (NULL == persistent_subscription->add_live_subscription &&
         NULL == persistent_subscription->live_subscription &&
-        max_recorded_position_is_caught_up(persistent_subscription, persistent_subscription->position))
+        aeron_archive_persistent_subscription_max_recorded_position_is_caught_up(persistent_subscription, persistent_subscription->position))
     {
         if (!aeron_archive_persistent_subscription_do_add_live_subscription(persistent_subscription))
         {
-            clean_up_replay(persistent_subscription);
-            clean_up_replay_subscription(persistent_subscription);
+            aeron_archive_persistent_subscription_clean_up_replay(persistent_subscription);
+            aeron_archive_persistent_subscription_clean_up_replay_subscription(persistent_subscription);
             return 1;
         }
     }
@@ -1970,7 +2017,7 @@ static aeron_controlled_fragment_handler_action_t aeron_archive_persistent_subsc
     int64_t current_replay_position = aeron_header_position(header);
     if (current_replay_position == persistent_subscription->next_live_position)
     {
-        transition(persistent_subscription, LIVE);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, LIVE);
         return AERON_ACTION_ABORT;
     }
     return aeron_image_controlled_fragment_assembler_handler(
@@ -1990,7 +2037,7 @@ static aeron_controlled_fragment_handler_action_t aeron_archive_persistent_subsc
     int64_t current_replay_position = aeron_header_position(header);
     if (current_replay_position == persistent_subscription->next_live_position)
     {
-        transition(persistent_subscription, LIVE);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, LIVE);
         return AERON_ACTION_ABORT;
     }
     aeron_image_fragment_assembler_handler(
@@ -2001,7 +2048,9 @@ static aeron_controlled_fragment_handler_action_t aeron_archive_persistent_subsc
     return AERON_ACTION_CONTINUE;
 }
 
-static int aeron_archive_persistent_subscription_attempt_switch(aeron_archive_persistent_subscription_t *persistent_subscription, struct poll_ctx *poll_ctx)
+static int aeron_archive_persistent_subscription_attempt_switch(
+    aeron_archive_persistent_subscription_t *persistent_subscription,
+    aeron_archive_persistent_subscription_poll_ctx_t *poll_ctx)
 {
     int fragments = 0;
 
@@ -2013,32 +2062,32 @@ static int aeron_archive_persistent_subscription_attempt_switch(aeron_archive_pe
 
     if (replay_position == live_position)
     {
-        transition(persistent_subscription, LIVE);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, LIVE);
     }
     else
     {
         if (aeron_image_is_closed(replay_image))
         {
             persistent_subscription->position = replay_position;
-            clean_up_live_subscription(persistent_subscription);
-            clean_up_replay(persistent_subscription);
-            clean_up_replay_subscription(persistent_subscription);
-            set_up_replay(persistent_subscription);
+            aeron_archive_persistent_subscription_clean_up_live_subscription(persistent_subscription);
+            aeron_archive_persistent_subscription_clean_up_replay(persistent_subscription);
+            aeron_archive_persistent_subscription_clean_up_replay_subscription(persistent_subscription);
+            aeron_archive_persistent_subscription_set_up_replay(persistent_subscription);
 
             return 1;
         }
 
         if (aeron_image_is_closed(live_image))
         {
-            clean_up_live_subscription(persistent_subscription);
+            aeron_archive_persistent_subscription_clean_up_live_subscription(persistent_subscription);
 
-            join_difference(persistent_subscription, INT64_MIN);
+            aeron_archive_persistent_subscription_set_join_difference(persistent_subscription, INT64_MIN);
 
-            max_recorded_position_reset(
+            aeron_archive_persistent_subscription_max_recorded_position_reset(
                 &persistent_subscription->max_recorded_position,
                 persistent_subscription->list_recording_request.term_buffer_length >> 2);
 
-            transition(persistent_subscription, REPLAY);
+            aeron_archive_persistent_subscription_transition(persistent_subscription, REPLAY);
 
             return 1;
         }
@@ -2071,25 +2120,27 @@ static int aeron_archive_persistent_subscription_attempt_switch(aeron_archive_pe
 
     if (aeron_archive_persistent_subscription_is_live(persistent_subscription))
     {
-        clean_up_replay(persistent_subscription);
-        clean_up_replay_subscription(persistent_subscription);
-        on_live_joined(persistent_subscription);
+        aeron_archive_persistent_subscription_clean_up_replay(persistent_subscription);
+        aeron_archive_persistent_subscription_clean_up_replay_subscription(persistent_subscription);
+        aeron_archive_persistent_subscription_on_live_joined(persistent_subscription);
     }
 
     return fragments;
 }
 
-static int aeron_archive_persistent_subscription_add_live_subscription(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_add_live_subscription(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     if (aeron_archive_persistent_subscription_do_add_live_subscription(persistent_subscription))
     {
-        transition(persistent_subscription, AWAIT_LIVE);
+        aeron_archive_persistent_subscription_transition(persistent_subscription, AWAIT_LIVE);
     }
 
     return 1;
 }
 
-static int aeron_archive_persistent_subscription_await_live(aeron_archive_persistent_subscription_t *persistent_subscription)
+static int aeron_archive_persistent_subscription_await_live(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     // awaiting live subscription or its image before going directly to live (no replay or switch)
 
@@ -2105,11 +2156,11 @@ static int aeron_archive_persistent_subscription_await_live(aeron_archive_persis
 
             if (-AERON_ERROR_CODE_RESOURCE_TEMPORARILY_UNAVAILABLE == errcode)
             {
-                transition(persistent_subscription, ADD_LIVE_SUBSCRIPTION);
+                aeron_archive_persistent_subscription_transition(persistent_subscription, ADD_LIVE_SUBSCRIPTION);
             }
             else
             {
-                transition(persistent_subscription, FAILED);
+                aeron_archive_persistent_subscription_transition(persistent_subscription, FAILED);
             }
 
             if (NULL != persistent_subscription->listener.on_error)
@@ -2126,7 +2177,7 @@ static int aeron_archive_persistent_subscription_await_live(aeron_archive_persis
         if (NULL != persistent_subscription->live_subscription)
         {
             persistent_subscription->add_live_subscription = NULL;
-            set_live_image_deadline(persistent_subscription);
+            aeron_archive_persistent_subscription_set_live_image_deadline(persistent_subscription);
         }
     }
 
@@ -2137,23 +2188,25 @@ static int aeron_archive_persistent_subscription_await_live(aeron_archive_persis
             aeron_image_t *image = aeron_subscription_image_at_index(persistent_subscription->live_subscription, 0);
             persistent_subscription->live_image = image;
             persistent_subscription->position = aeron_image_position(image);
-            join_difference(persistent_subscription, 0);
-            transition(persistent_subscription, LIVE);
-            on_live_joined(persistent_subscription);
+            aeron_archive_persistent_subscription_set_join_difference(persistent_subscription, 0);
+            aeron_archive_persistent_subscription_transition(persistent_subscription, LIVE);
+            aeron_archive_persistent_subscription_on_live_joined(persistent_subscription);
 
             return 1;
         }
         else if (!persistent_subscription->live_image_deadline_breached &&
                  aeron_nano_clock() - persistent_subscription->live_image_deadline_ns >= 0)
         {
-            on_live_image_deadline_breached(persistent_subscription);
+            aeron_archive_persistent_subscription_on_live_image_deadline_breached(persistent_subscription);
         }
     }
 
     return 0;
 }
 
-static int aeron_archive_persistent_subscription_live(aeron_archive_persistent_subscription_t *persistent_subscription, struct poll_ctx *poll_ctx)
+static int aeron_archive_persistent_subscription_live(
+    aeron_archive_persistent_subscription_t *persistent_subscription,
+    aeron_archive_persistent_subscription_poll_ctx_t *poll_ctx)
 {
     aeron_image_t *image = persistent_subscription->live_image;
 
@@ -2162,9 +2215,9 @@ static int aeron_archive_persistent_subscription_live(aeron_archive_persistent_s
     if (fragments == 0 && aeron_image_is_closed(image))
     {
         persistent_subscription->position = aeron_image_position(image);
-        clean_up_live_subscription(persistent_subscription);
-        set_up_replay(persistent_subscription);
-        on_live_left(persistent_subscription);
+        aeron_archive_persistent_subscription_clean_up_live_subscription(persistent_subscription);
+        aeron_archive_persistent_subscription_set_up_replay(persistent_subscription);
+        aeron_archive_persistent_subscription_on_live_left(persistent_subscription);
 
         return 1;
     }
@@ -2172,23 +2225,25 @@ static int aeron_archive_persistent_subscription_live(aeron_archive_persistent_s
     return fragments;
 }
 
-static int aeron_archive_persistent_subscription_do_work(aeron_archive_persistent_subscription_t *persistent_subscription, struct poll_ctx *poll_ctx)
+static int aeron_archive_persistent_subscription_do_work(
+    aeron_archive_persistent_subscription_t *persistent_subscription,
+    aeron_archive_persistent_subscription_poll_ctx_t *poll_ctx)
 {
     int work_count = aeron_archive_async_client_poll(persistent_subscription->archive);
 
     switch (persistent_subscription->state)
     {
         case AWAIT_ARCHIVE_CONNECTION:
-            work_count += await_archive_connection(persistent_subscription);
+            work_count += aeron_archive_persistent_subscription_await_archive_connection(persistent_subscription);
             break;
         case SEND_LIST_RECORDING_REQUEST:
-            work_count += send_list_recording_request(persistent_subscription);
+            work_count += aeron_archive_persistent_subscription_send_list_recording_request(persistent_subscription);
             break;
         case AWAIT_LIST_RECORDING_RESPONSE:
-            work_count += await_list_recording_response(persistent_subscription);
+            work_count += aeron_archive_persistent_subscription_await_list_recording_response(persistent_subscription);
             break;
         case SEND_REPLAY_REQUEST:
-            work_count += send_replay_request(persistent_subscription);
+            work_count += aeron_archive_persistent_subscription_send_replay_request(persistent_subscription);
             break;
         case AWAIT_REPLAY_RESPONSE:
             work_count += aeron_archive_persistent_subscription_await_replay_response(persistent_subscription);
@@ -2242,7 +2297,7 @@ int aeron_archive_persistent_subscription_poll(
     void *clientd,
     size_t fragment_limit)
 {
-    struct poll_ctx poll_ctx =
+    aeron_archive_persistent_subscription_poll_ctx_t poll_ctx =
         {
             .controlled = false,
             .handler.uncontrolled = handler,
@@ -2259,7 +2314,7 @@ int aeron_archive_persistent_subscription_controlled_poll(
     void *clientd,
     size_t fragment_limit)
 {
-    struct poll_ctx poll_ctx =
+    aeron_archive_persistent_subscription_poll_ctx_t poll_ctx =
         {
             .controlled = true,
             .handler.controlled = handler,
@@ -2270,23 +2325,27 @@ int aeron_archive_persistent_subscription_controlled_poll(
     return aeron_archive_persistent_subscription_do_work(persistent_subscription, &poll_ctx);
 }
 
-bool aeron_archive_persistent_subscription_is_live(aeron_archive_persistent_subscription_t *persistent_subscription)
+bool aeron_archive_persistent_subscription_is_live(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     return LIVE == persistent_subscription->state;
 }
 
-bool aeron_archive_persistent_subscription_is_replaying(aeron_archive_persistent_subscription_t *persistent_subscription)
+bool aeron_archive_persistent_subscription_is_replaying(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     return REPLAY == persistent_subscription->state ||
            ATTEMPT_SWITCH == persistent_subscription->state;
 }
 
-bool aeron_archive_persistent_subscription_has_failed(aeron_archive_persistent_subscription_t *persistent_subscription)
+bool aeron_archive_persistent_subscription_has_failed(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     return FAILED == persistent_subscription->state;
 }
 
-int64_t aeron_archive_persistent_subscription_join_difference(aeron_archive_persistent_subscription_t *persistent_subscription)
+int64_t aeron_archive_persistent_subscription_join_difference(
+    aeron_archive_persistent_subscription_t *persistent_subscription)
 {
     return persistent_subscription->join_difference;
 }

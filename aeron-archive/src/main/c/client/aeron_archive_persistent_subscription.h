@@ -25,8 +25,8 @@ extern "C"
 {
 #endif
 
-#define AERON_PERSISTENT_SUBSCRIPTION_FROM_START (INT64_C(-1))
-#define AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE  (INT64_C(-2))
+#define AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_START (INT64_C(-1))
+#define AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_LIVE  (INT64_C(-2))
 
 typedef struct aeron_archive_persistent_subscription_context_stct aeron_archive_persistent_subscription_context_t;
 typedef struct aeron_archive_persistent_subscription_stct aeron_archive_persistent_subscription_t;
@@ -206,7 +206,7 @@ int32_t aeron_archive_persistent_subscription_context_get_replay_stream_id(
 
 /**
  * Set the position to start the subscription from, can be an actual position or
- * AERON_PERSISTENT_SUBSCRIPTION_FROM_START or AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE.
+ * AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_START or AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_LIVE.
  *
  * @param context to configure.
  * @param start_position the position to start the subscription from.

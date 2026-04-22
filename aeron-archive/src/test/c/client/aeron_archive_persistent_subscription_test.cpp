@@ -1154,7 +1154,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldStartFromLiveWithNoInitialR
         persistent_publication.recordingId());
 
     aeron_archive_persistent_subscription_context_set_start_position(
-        context, AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
+        context, AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -1242,7 +1242,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldStartFromLiveWhenThereIsNoD
     aeron_archive_context_close(archive_ctx);
 }
 
-// Verifies that a persistent subscription configured with AERON_PERSISTENT_SUBSCRIPTION_FROM_START
+// Verifies that a persistent subscription configured with AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_START
 // replays from the recording's actual start position. The channel is configured with an initial
 // term offset of 1024, so the recording starts at position 1024 rather than 0. Five messages are
 // persisted before the subscription is created. The subscription is expected to replay all five
@@ -1268,7 +1268,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldReplayFromRecordingStartPos
         persistent_publication.recordingId());
 
     aeron_archive_persistent_subscription_context_set_start_position(
-        context, AERON_PERSISTENT_SUBSCRIPTION_FROM_START);
+        context, AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_START);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -1305,7 +1305,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldReplayFromRecordingStartPos
     aeron_archive_context_close(archive_ctx);
 }
 
-// Verifies that a persistent subscription configured with AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE
+// Verifies that a persistent subscription configured with AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_LIVE
 // does not replay messages from the archive. Five messages are persisted before the subscription
 // is created. The subscription becomes live without receiving any of those messages, and on_live_joined
 // is invoked exactly once. Three further messages are then published and the subscription is
@@ -1336,7 +1336,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldNotReplayOldMessagesWhenSta
         persistent_publication.recordingId());
 
     aeron_archive_persistent_subscription_context_set_start_position(
-        context, AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
+        context, AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
     aeron_archive_persistent_subscription_context_set_listener(context, &listener);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
@@ -1868,7 +1868,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, canFallbackToReplayAfterStartingF
         STREAM_ID,
         "aeron:udp?endpoint=localhost:0",
         -5,
-        AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
+        AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
 
     TestListener listener;
     listener.attachTo(context);
@@ -2754,7 +2754,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, canStartFromLiveWhenRecordingHasS
         STREAM_ID,
         "aeron:udp?endpoint=localhost:0",
         -5,
-        AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
+        AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -2971,7 +2971,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, cannotFallbackToReplayWhenRecordi
         aeron.aeron(), archive_ctx, persistent_publication.recordingId(),
         MDC_SUBSCRIPTION_CHANNEL, STREAM_ID,
         "aeron:udp?endpoint=localhost:0", -5,
-        AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
+        AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
 
     TestListener listener;
     listener.attachTo(context);
@@ -3065,7 +3065,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, cannotFallbackToReplayWhenRecordi
         aeron.aeron(), archive_ctx, persistent_publication.recordingId(),
         MDC_SUBSCRIPTION_CHANNEL, STREAM_ID,
         "aeron:udp?endpoint=localhost:0", -5,
-        AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
+        AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
 
     TestListener listener;
     listener.attachTo(context);
@@ -3146,7 +3146,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, untetheredSpyCanFallbackToReplay)
         (SPY_PREFIX + MDC_PUBLICATION_CHANNEL + "|tether=false"),
         STREAM_ID,
         "aeron:udp?endpoint=localhost:0", -5,
-        AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
+        AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
 
     TestListener listener;
     listener.attachTo(context);
@@ -3605,7 +3605,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldStayOnReplayWhenLiveCannotC
         STREAM_ID,
         "aeron:udp?endpoint=localhost:0",
         -5,
-        AERON_PERSISTENT_SUBSCRIPTION_FROM_START);
+        AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_START);
 
     TestListener listener;
     listener.attachTo(context);
@@ -3893,7 +3893,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldFailWhenLivePublicationIsRe
         STREAM_ID,
         "aeron:udp?endpoint=localhost:0",
         -5,
-        AERON_PERSISTENT_SUBSCRIPTION_FROM_START);
+        AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_START);
 
     TestListener listener;
     listener.attachTo(context);
@@ -4021,7 +4021,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldRetryAndRecoverWhenLiveIsNo
         STREAM_ID,
         "aeron:udp?endpoint=localhost:0",
         -5,
-        AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
+        AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_LIVE);
 
     TestListener listener;
     listener.attachTo(context);
@@ -4131,7 +4131,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldRetryAndRecoverWhenArchiveI
         STREAM_ID,
         "aeron:udp?endpoint=localhost:0",
         -5,
-        AERON_PERSISTENT_SUBSCRIPTION_FROM_START);
+        AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_START);
 
     TestListener listener;
     listener.attachTo(context);
@@ -4267,7 +4267,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldLeaveLiveWhenPublicationClo
         aeron1.aeron(), persistent_subscription_archive_ctx, recording_id,
         MDC_SUBSCRIPTION_CHANNEL, STREAM_ID,
         "aeron:udp?endpoint=localhost:0", -5,
-        AERON_PERSISTENT_SUBSCRIPTION_FROM_START);
+        AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_START);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();
@@ -4412,7 +4412,7 @@ TEST_F(AeronArchivePersistentSubscriptionTest, shouldReconnectToTheArchiveAfterA
         STREAM_ID,
         "aeron:udp?endpoint=localhost:0",
         -5,
-        AERON_PERSISTENT_SUBSCRIPTION_FROM_START);
+        AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_START);
 
     aeron_archive_persistent_subscription_t *persistent_subscription;
     ASSERT_EQ(0, aeron_archive_persistent_subscription_create(&persistent_subscription, context)) << aeron_errmsg();

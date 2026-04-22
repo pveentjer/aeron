@@ -44,13 +44,13 @@ public:
      * Start consuming from the beginning of the recording.
      * @see aeron_archive_persistent_subscription_context_set_start_position
      */
-    static constexpr std::int64_t FROM_START = AERON_PERSISTENT_SUBSCRIPTION_FROM_START;
+    static constexpr std::int64_t FROM_START = AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_START;
 
     /**
      * Start consuming from the live stream, skipping any existing recorded data.
      * @see aeron_archive_persistent_subscription_context_set_start_position
      */
-    static constexpr std::int64_t FROM_LIVE = AERON_PERSISTENT_SUBSCRIPTION_FROM_LIVE;
+    static constexpr std::int64_t FROM_LIVE = AERON_ARCHIVE_PERSISTENT_SUBSCRIPTION_FROM_LIVE;
 
     /**
      * Configuration context for constructing a PersistentSubscription. Uses a fluent builder
