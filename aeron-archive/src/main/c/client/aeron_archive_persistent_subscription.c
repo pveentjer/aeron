@@ -1227,11 +1227,11 @@ static int aeron_archive_persistent_subscription_send_list_recording_request(
 static void aeron_archive_persistent_subscription_set_up_replay(
     aeron_archive_persistent_subscription_t *persistent_subscription)
 {
+    aeron_archive_persistent_subscription_set_join_difference(persistent_subscription, INT64_MIN);
+
     aeron_archive_persistent_subscription_max_recorded_position_reset(
         &persistent_subscription->max_recorded_position,
         persistent_subscription->list_recording_request.term_buffer_length >> 2);
-
-    aeron_archive_persistent_subscription_set_join_difference(persistent_subscription, INT64_MIN);
 
     if (persistent_subscription->replay_channel_type == REPLAY_CHANNEL_SESSION_SPECIFIC)
     {
