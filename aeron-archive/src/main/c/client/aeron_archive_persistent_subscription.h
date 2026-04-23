@@ -31,11 +31,46 @@ extern "C"
 typedef struct aeron_archive_persistent_subscription_context_stct aeron_archive_persistent_subscription_context_t;
 typedef struct aeron_archive_persistent_subscription_stct aeron_archive_persistent_subscription_t;
 
+/**
+ * Listener for events from a persistent subscription.
+ * <p>
+ * All callbacks are invoked from the thread that calls aeron_archive_persistent_subscription_poll
+ * or aeron_archive_persistent_subscription_controlled_poll.
+ */
 typedef struct aeron_archive_persistent_subscription_listener_stct
 {
+    /**
+     * Invoked when the persistent subscription transitions to the live state.
+     *
+     * @param clientd the clientd set on this listener.
+     */
     void (*on_live_joined)(void *clientd);
+
+    /**
+     * Invoked when the persistent subscription transitions from the live state.
+     *
+     * @param clientd the clientd set on this listener.
+     */
     void (*on_live_left)(void *clientd);
+
+    /**
+     * Invoked when the persistent subscription encounters an error.
+     * <p>
+     * The message pointer refers to a stack-allocated buffer owned by the caller and is only valid
+     * for the duration of this callback.
+     *
+     * @param clientd the clientd set on this listener.
+     * @param errcode the error code describing the failure.
+     * @param message a human-readable error message. Valid only for the duration of this callback;
+     *                copy if it must be retained.
+     */
     void (*on_error)(void *clientd, int errcode, const char *message);
+
+    /**
+     * Opaque user data passed to each of the callbacks above. The persistent subscription does not
+     * dereference, copy, or take ownership of this pointer. The caller is responsible for ensuring
+     * it remains valid for the lifetime of the persistent subscription.
+     */
     void *clientd;
 }
 aeron_archive_persistent_subscription_listener_t;
